@@ -1,0 +1,10 @@
+fastapi==0.111.0
+uvicorn[standard]==0.29.0 # Use a versão que você está usando
+SQLAlchemy==2.0.30 # Compatível com versões mais recentes
+python-dotenv==1.0.1
+mysql-connector-python==8.4.0
+pydantic==2.7.4 # Usado model_dump, que é do Pydantic v2
+requests==2.32.3
+python-dateutil==2.9.0.post0
+bcrypt==4.1.3
+python-jose[cryptography]==3.3.0 # A instalação com [cryptography] é importante para JWT
