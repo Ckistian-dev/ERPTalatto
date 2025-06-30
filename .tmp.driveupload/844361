@@ -18,14 +18,14 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 # O Railway permite que você defina essa variável para produção.
 # No Railway, você definiria uma variável como FRONTEND_URLS = "https://seu-frontend-vercel.vercel.app,https://erp-talatto.vercel.app"
 # e no seu ambiente de desenvolvimento local, a variável não existiria ou seria apenas "http://localhost:5173"
-allowed_origins_str = os.environ.get("FRONTEND_URLS", "http://localhost:5173,https://erp-talatto.vercel.app,https://erptalatto-production.up.railway.app")
+#allowed_origins_str = os.environ.get("FRONTEND_URLS", "http://localhost:5173")
 # Se houver múltiplas URLs, elas devem ser separadas por vírgula no .env ou no Railway.
 # split(',') as transforma em uma lista.
-allowed_origins = [origin.strip() for origin in allowed_origins_str.split(',')]
+#allowed_origins = [origin.strip() for origin in allowed_origins_str.split(',')]
 
 # Se você deseja permitir *TODAS* as origens (APENAS PARA FINS DE DESENVOLVIMENTO/TESTE INICIAL, CUIDADO EM PRODUÇÃO!)
 # Descomente a linha abaixo e comente as linhas acima de `allowed_origins_str` e `allowed_origins`
-# allowed_origins = ["*"]
+allowed_origins = ["*"]
 
 # ✅ DESCOMENTADO: Este bloco de código é essencial para o CORS funcionar!
 app.add_middleware(
