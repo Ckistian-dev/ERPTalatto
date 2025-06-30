@@ -17,7 +17,8 @@ pool = mysql.connector.pooling.MySQLConnectionPool(
     host=os.getenv("DB_HOST"),
     user=os.getenv("DB_USER"),
     password=os.getenv("DB_PASSWORD"),
-    database=os.getenv("DB_NAME")
+    database=os.getenv("DB_NAME"),
+    port=int(os.getenv("DB_PORT")) # ✅ Adicionado para puxar a porta da variável de ambiente
 )
 
 router = APIRouter()
@@ -378,7 +379,7 @@ def validar_importacao_pedido(payload: ImportacaoPayloadPedido):
         cursor.close()
         conn.close()
         
-        
+    	
 @router.post("/pedidos/importar_csv_confirmado")
 def importar_csv_confirmado_pedido(payload: ImportacaoPayloadPedido):
     print(f"Total de registros recebidos: {len(payload.registros)}")

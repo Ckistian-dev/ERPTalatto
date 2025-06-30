@@ -1,14 +1,18 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from fastapi import status
-from typing import Optional
+from typing import Optional, List
+from datetime import date, datetime
+from dateutil.relativedelta import relativedelta
 import os
 import traceback
+import unicodedata
 import mysql.connector.pooling
-import decimal
-from typing import List
-import json
+from dotenv import load_dotenv
+from urllib.parse import unquote
+import decimal # Importe o módulo decimal se ainda não estiver
 
+load_dotenv()
 
 # Pool de conexão MySQL
 pool = mysql.connector.pooling.MySQLConnectionPool(
@@ -18,7 +22,8 @@ pool = mysql.connector.pooling.MySQLConnectionPool(
     host=os.getenv("DB_HOST"),
     user=os.getenv("DB_USER"),
     password=os.getenv("DB_PASSWORD"),
-    database=os.getenv("DB_NAME")
+    database=os.getenv("DB_NAME"),
+    port=int(os.getenv("DB_PORT")) # ✅ Adicionado para puxar a porta da variável de ambiente
 )
 
 router = APIRouter()
@@ -56,7 +61,7 @@ class OrcamentoCreate(BaseModel):
     total_com_desconto: float
     tipo_frete: str
     transportadora: int
-    transportadora_nome: Optional[str]  # 👈 ADICIONE ESSA LINHA!
+    transportadora_nome: Optional[str]
     valor_frete: float
     formas_pagamento: List[FormaPagamento]
     observacao: Optional[str]
@@ -277,6 +282,8 @@ def atualizar_orcamento(orcamento_id: int, orcamento: OrcamentoCreate):
 
 @router.post("/orcamentos/validar_importacao")
 def validar_importacao_orcamento(payload: ImportacaoPayloadOrcamento):
+    print(f"Total de registros recebidos: {len(payload.registros)}")
+
     conn = pool.get_connection()
     cursor = conn.cursor(dictionary=True)
 
@@ -286,7 +293,7 @@ def validar_importacao_orcamento(payload: ImportacaoPayloadOrcamento):
 
     try:
         for orcamento in payload.registros:
-            orcamento_dict = orcamento.dict()
+            orcamento_dict = orcamento if isinstance(orcamento, dict) else orcamento.dict()
             orcamento_dict.pop("id", None)
             orcamento_dict.pop("criado_em", None)
 
@@ -316,7 +323,7 @@ def validar_importacao_orcamento(payload: ImportacaoPayloadOrcamento):
         cursor.close()
         conn.close()
         
-        
+    	
 @router.post("/orcamentos/importar_csv_confirmado")
 def importar_csv_confirmado_orcamento(payload: ImportacaoPayloadOrcamento):
     print(f"Total de registros recebidos: {len(payload.registros)}")

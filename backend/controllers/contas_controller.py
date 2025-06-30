@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, EmailStr
 from fastapi import status
 from typing import Optional, List
 from datetime import date, datetime
@@ -22,6 +22,7 @@ pool = mysql.connector.pooling.MySQLConnectionPool(
     user=os.getenv("DB_USER"),
     password=os.getenv("DB_PASSWORD"),
     database=os.getenv("DB_NAME"),
+    port=int(os.getenv("DB_PORT")), # ✅ Adicionado para puxar a porta da variável de ambiente
     charset='utf8mb4', # Adicionado para melhor suporte a caracteres
     collation='utf8mb4_unicode_ci' # Adicionado para melhor suporte a caracteres
 )
@@ -165,7 +166,7 @@ def criar_conta(conta: ContaCreate):
                 for i in range(1, forma_pgto_item.parcelas + 1):
                     # 2. Calcular a data da parcela usando o objeto date
                     data_vencimento_parcela_obj = data_vencimento_base_obj + relativedelta(months=i-1)
-                    # 3. Formatar a data da parcela para string YYYY-MM-DD para o banco
+                    # 3. Formatar a data da parcela para string DD/MM/YYYY para o banco
                     data_vencimento_final_str_db = data_vencimento_parcela_obj.strftime("%d/%m/%Y")
                     forma_pagamento_db = f"Parcelamento {i}/{forma_pgto_item.parcelas}"
                     
@@ -197,9 +198,9 @@ def criar_conta(conta: ContaCreate):
 
 
                 if valor_conta_atual <= 0 and forma_pgto_item.tipo not in ["Parcelamento"]: # Parcelamento já validado
-                     # Opcional: Lançar erro se o valor for zero ou negativo para pagamentos únicos.
-                     # raise HTTPException(status_code=400, detail=f"Valor inválido ou não fornecido para o tipo '{forma_pgto_item.tipo}'.")
-                     pass
+                    # Opcional: Lançar erro se o valor for zero ou negativo para pagamentos únicos.
+                    # raise HTTPException(status_code=400, detail=f"Valor inválido ou não fornecido para o tipo '{forma_pgto_item.tipo}'.")
+                    pass
 
 
                 values = (
@@ -216,7 +217,7 @@ def criar_conta(conta: ContaCreate):
         conn.commit()
 
         if conta_id_para_retorno is None:
-             # Isso não deveria acontecer se formas_pagamento não for vazia e houver inserções.
+            # Isso não deveria acontecer se formas_pagamento não for vazia e houver inserções.
             raise HTTPException(status_code=500, detail="Nenhuma conta foi criada, erro interno.")
 
         # Retornar os dados da última conta inserida (ou da primeira, se preferir ajustar a lógica)
@@ -251,7 +252,7 @@ def criar_conta(conta: ContaCreate):
         if cursor: cursor.close()
         if conn: conn.close()
 
-     
+    	
 @router.get("/contas/paginado")
 def listar_contas_paginado(
     page: int = 1,
@@ -405,11 +406,11 @@ def atualizar_conta(conta_id: int, conta: ContaUpdate):
         if conn: conn.rollback()
         if err.errno == 1062:
              if "cpf_cnpj" in err.msg.lower():
-                raise HTTPException(status_code=400, detail="CPF/CNPJ já cadastrado para outro registro.")
+                 raise HTTPException(status_code=400, detail="CPF/CNPJ já cadastrado para outro registro.")
              elif "email" in err.msg.lower():
-                raise HTTPException(status_code=400, detail="E-mail já cadastrado para outro registro.")
+                 raise HTTPException(status_code=400, detail="E-mail já cadastrado para outro registro.")
              else:
-                raise HTTPException(status_code=400, detail=f"Valor duplicado já existente: {err.msg}")
+                 raise HTTPException(status_code=400, detail=f"Valor duplicado já existente: {err.msg}")
         print(f"Erro de banco de dados: {err}")
         print(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Erro no servidor ao atualizar conta: " + str(err))
@@ -449,7 +450,7 @@ def validar_importacao(payload: ImportacaoPayload):
                 erros_validacao.append({"mensagem": "Conta sem CPF/CNPJ informado.", "dados_conta": conta_csv.model_dump()})
                 continue
 
-            cursor.execute("SELECT *, DATE_FORMAT(criado_em, '%Y-%m-%dT%H:%i:%S') as criado_em FROM contas WHERE cpf_cnpj = %s", (cpf_cnpj_limpo,))
+            cursor.execute("SELECT id FROM contas WHERE cpf_cnpj = %s", (cpf_cnpj_limpo,))
             existente_db = cursor.fetchone()
 
             if existente_db:
@@ -622,4 +623,3 @@ def listar_contas_dropdown(tipo_conta: Optional[str] = None): # Tornar tipo_cont
     finally:
         if cursor: cursor.close()
         if conn: conn.close()
-

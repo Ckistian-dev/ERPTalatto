@@ -1,10 +1,11 @@
-import os
-import json
-import requests
+# controllers/nfe_controller.py
 from fastapi import APIRouter, HTTPException, Body
 from pydantic import BaseModel
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
+import os
+import json
+import requests
 import mysql.connector
 import traceback
 import uuid
@@ -55,6 +56,7 @@ def get_db_connection():
             user=os.getenv("DB_USER"),
             password=os.getenv("DB_PASSWORD"),
             database=os.getenv("DB_NAME"),
+            port=int(os.getenv("DB_PORT")), # ✅ Adicionado para puxar a porta da variável de ambiente
             charset='utf8mb4',
             collation='utf8mb4_unicode_ci'
         )
@@ -556,4 +558,3 @@ async def consultar_status_nfe_v2(id_tecnospeed_ou_id_integracao: str):
         "id_consultado": id_tecnospeed_ou_id_integracao,
         "resposta_tecnospeed_consulta": resposta_consulta
     }
-

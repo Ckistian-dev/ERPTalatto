@@ -19,6 +19,7 @@ pool = mysql.connector.pooling.MySQLConnectionPool(
     user=os.getenv("DB_USER"),
     password=os.getenv("DB_PASSWORD"),
     database=os.getenv("DB_NAME"),
+    port=int(os.getenv("DB_PORT")), # ✅ Adicionado para puxar a porta da variável de ambiente
     charset='utf8mb4', # Adicionado para melhor suporte a caracteres
     collation='utf8mb4_unicode_ci' # Adicionado para melhor suporte a caracteres
 )
@@ -110,7 +111,7 @@ def criar_cadastro(cadastro: CadastroCreate):
 
     except mysql.connector.Error as err:
         if conn: conn.rollback() # Importante para desfazer alterações em caso de erro
-        if err.errno == 1062:  # Código de erro para UNIQUE violation
+        if err.errno == 1062: 	# Código de erro para UNIQUE violation
             if "cpf_cnpj" in err.msg.lower(): # Ajustado para ser case-insensitive
                 raise HTTPException(status_code=400, detail="CPF/CNPJ já cadastrado.")
             elif "email" in err.msg.lower():
@@ -129,7 +130,7 @@ def criar_cadastro(cadastro: CadastroCreate):
         if cursor: cursor.close()
         if conn: conn.close()
 
-     
+    	
 @router.get("/cadastros/paginado")
 def listar_cadastros_paginado(
     page: int = 1,
@@ -273,11 +274,11 @@ def atualizar_cadastro(cadastro_id: int, cadastro: CadastroUpdate):
         if conn: conn.rollback()
         if err.errno == 1062:
              if "cpf_cnpj" in err.msg.lower():
-                raise HTTPException(status_code=400, detail="CPF/CNPJ já cadastrado para outro registro.")
+                 raise HTTPException(status_code=400, detail="CPF/CNPJ já cadastrado para outro registro.")
              elif "email" in err.msg.lower():
-                raise HTTPException(status_code=400, detail="E-mail já cadastrado para outro registro.")
+                 raise HTTPException(status_code=400, detail="E-mail já cadastrado para outro registro.")
              else:
-                raise HTTPException(status_code=400, detail=f"Valor duplicado já existente: {err.msg}")
+                 raise HTTPException(status_code=400, detail=f"Valor duplicado já existente: {err.msg}")
         print(f"Erro de banco de dados: {err}")
         print(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Erro no servidor ao atualizar cadastro: " + str(err))
@@ -501,4 +502,3 @@ async def listar_cadastros_dropdown(
     finally:
         if cursor: cursor.close()
         if conn: conn.close()
-
