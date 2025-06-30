@@ -11,7 +11,7 @@ app = FastAPI()
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
 # --- Configuração CORS ---
-allowed_origins_str = os.environ.get("FRONTEND_URLS", "http://localhost:5173,https://erp-talatto.vercel.app,https://erptalatto-production.up.railway.app") # ✅ Adicionada a URL do Railway
+allowed_origins_str = os.environ.get("FRONTEND_URLS", "https://erp-talatto.vercel.app,https://erptalatto-production.up.railway.app") # ✅ Adicionada a URL do Railway
 # Se houver múltiplas URLs, elas devem ser separadas por vírgula no .env ou no Railway.
 # split(',') as transforma em uma lista.
 allowed_origins = [origin.strip() for origin in allowed_origins_str.split(',')]
