@@ -235,7 +235,7 @@ export default function CadastroProduto({ modo = "novo" }) {
       case "fiscal":
         return (
           <>
-            <CampoNumSimples label="Classificação Fiscal" name="classificacao_fiscal" value={form.classificacao_fiscal || ""} onChange={handleChange} min={8} max={8} placeholder="0000.00.00"
+            <CampoNumSimples label="Classificação Fiscal (NCM)" name="classificacao_fiscal" value={form.classificacao_fiscal || ""} onChange={handleChange} min={8} max={8} placeholder="0000.00.00"
               formatos={[{ tam: 8, regex: /(\d{4})(\d{2})(\d{2})/, mascara: '$1.$2.$3' }]}
             />
             <CampoDropdownEditavel label="Origem" name="origem" value={form.origem || ""} onChange={handleChange} tipo="origem" usuario={usuario} />

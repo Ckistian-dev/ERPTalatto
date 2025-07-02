@@ -9,7 +9,7 @@ import decimal
 import json
 
 
-# Pool de conexão MySQL
+# Pool de conexão MySQL (sem alterações)
 pool = mysql.connector.pooling.MySQLConnectionPool(
     pool_name="pedido_pool",
     pool_size=10,
@@ -18,11 +18,12 @@ pool = mysql.connector.pooling.MySQLConnectionPool(
     user=os.getenv("DB_USER"),
     password=os.getenv("DB_PASSWORD"),
     database=os.getenv("DB_NAME"),
-    port=int(os.getenv("DB_PORT")) # ✅ Adicionado para puxar a porta da variável de ambiente
+    port=int(os.getenv("DB_PORT"))
 )
 
 router = APIRouter()
 
+# Modelos (ItemPedido, FormaPagamento, PedidoCreate, etc.) - Sem alterações
 class ItemPedido(BaseModel):
     produto_id: int
     produto: str
@@ -41,21 +42,22 @@ class FormaPagamento(BaseModel):
     parcelas: Optional[int]
     valor_parcela: Optional[float]
 
+# ATUALIZADO: Campos renomeados para o padrão do banco
 class PedidoCreate(BaseModel):
     data_emissao: str
     data_validade: str
-    cliente: int
+    cliente_id: int  # Renomeado de 'cliente'
     cliente_nome: str
-    vendedor: int
+    vendedor_id: int  # Renomeado de 'vendedor'
     vendedor_nome: str
+    transportadora_id: int # Renomeado de 'transportadora'
+    transportadora_nome: Optional[str]
     origem_venda: str
     lista_itens: List[ItemPedido]
     total: float
     desconto_total: float
     total_com_desconto: float
     tipo_frete: str
-    transportadora: int
-    transportadora_nome: Optional[str]
     valor_frete: float
     formas_pagamento: List[FormaPagamento]
     data_finalizacao: Optional[str] = None
@@ -67,6 +69,39 @@ class PedidoCreate(BaseModel):
     data_nf: Optional[str] = None
     observacao: Optional[str]
     situacao_pedido: str
+    tecnospeed_id: Optional[str] = None
+    tecnospeed_status: Optional[str] = None
+
+
+# ATUALIZADO: Campos renomeados para o padrão do banco
+class PedidoUpdate(BaseModel):
+    data_emissao: Optional[str] = None
+    data_validade: Optional[str] = None
+    cliente_id: Optional[int] = None # Renomeado
+    cliente_nome: Optional[str] = None
+    vendedor_id: Optional[int] = None # Renomeado
+    vendedor_nome: Optional[str] = None
+    transportadora_id: Optional[int] = None # Renomeado
+    transportadora_nome: Optional[str] = None
+    origem_venda: Optional[str] = None
+    lista_itens: Optional[List[ItemPedido]] = None
+    total: Optional[float] = None
+    desconto_total: Optional[float] = None
+    total_com_desconto: Optional[float] = None
+    tipo_frete: Optional[str] = None
+    valor_frete: Optional[float] = None
+    formas_pagamento: Optional[List[FormaPagamento]] = None
+    data_finalizacao: Optional[str] = None
+    ordem_finalizacao: Optional[float] = None
+    endereco_expedicao: Optional[dict] = None
+    hora_expedicao: Optional[str] = None
+    usuario_expedicao: Optional[str] = None
+    numero_nf: Optional[str] = None
+    data_nf: Optional[str] = None
+    observacao: Optional[str] = None
+    situacao_pedido: Optional[str] = None
+    tecnospeed_id: Optional[str] = None # Renomeado
+    tecnospeed_status: Optional[str] = None # Renomeado
     
     
 class PedidoCSV(BaseModel):
@@ -94,12 +129,13 @@ class PedidoCSV(BaseModel):
 class ImportacaoPayloadPedido(BaseModel):
     registros: List[PedidoCSV]
 
+# ATUALIZADO: Rota de criação para usar os novos nomes de campos
 @router.post("/pedidos", status_code=status.HTTP_201_CREATED)
 def criar_pedido(pedido: PedidoCreate):
     conn = pool.get_connection()
     cursor = conn.cursor()
-
     try:
+        # Query usa os nomes de coluna corretos, que agora correspondem ao modelo
         cursor.execute("""
             INSERT INTO pedidos (
                 situacao_pedido, data_emissao, data_validade,
@@ -108,21 +144,13 @@ def criar_pedido(pedido: PedidoCreate):
                 valor_frete, total, desconto_total, total_com_desconto,
                 lista_itens, formas_pagamento, data_finalizacao, ordem_finalizacao, observacao,
                 endereco_expedicao, hora_expedicao, usuario_expedicao,
-                numero_nf, data_nf
+                numero_nf, data_nf, tecnospeed_id, tecnospeed_status
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
-            pedido.situacao_pedido,
-            pedido.data_emissao,
-            pedido.data_validade,
-            pedido.cliente,
-            pedido.cliente_nome,
-            pedido.vendedor,
-            pedido.vendedor_nome,
-            pedido.origem_venda,
-            pedido.tipo_frete,
-            pedido.transportadora,
-            pedido.transportadora_nome,
+            pedido.situacao_pedido, pedido.data_emissao, pedido.data_validade,
+            pedido.cliente_id, pedido.cliente_nome, pedido.vendedor_id, pedido.vendedor_nome,
+            pedido.origem_venda, pedido.tipo_frete, pedido.transportadora_id, pedido.transportadora_nome,
             decimal.Decimal(str(pedido.valor_frete or 0.00)),
             decimal.Decimal(str(pedido.total or 0.00)),
             decimal.Decimal(str(pedido.desconto_total or 0.00)),
@@ -133,17 +161,65 @@ def criar_pedido(pedido: PedidoCreate):
             decimal.Decimal(str(pedido.ordem_finalizacao)) if pedido.ordem_finalizacao is not None else None,
             pedido.observacao,
             json.dumps(pedido.endereco_expedicao) if pedido.endereco_expedicao else None,
-            pedido.hora_expedicao,
-            pedido.usuario_expedicao,
-            pedido.numero_nf,
-            pedido.data_nf
+            pedido.hora_expedicao, pedido.usuario_expedicao,
+            pedido.numero_nf, pedido.data_nf,
+            pedido.tecnospeed_id, pedido.tecnospeed_status
         ))
-
         conn.commit()
         return {"mensagem": "Pedido criado com sucesso"}
-
     except mysql.connector.Error as err:
         raise HTTPException(status_code=500, detail="Erro no servidor: " + str(err))
+    finally:
+        cursor.close()
+        conn.close()
+
+# ATUALIZADO: Rota de atualização simplificada
+@router.put("/pedidos/{pedido_id}")
+def atualizar_pedido(pedido_id: int, pedido_update: PedidoUpdate):
+    conn = pool.get_connection()
+    cursor = conn.cursor()
+
+    update_data = pedido_update.dict(exclude_unset=True)
+
+    if not update_data:
+        raise HTTPException(status_code=400, detail="Nenhum dado fornecido para atualização.")
+
+    try:
+        cursor.execute("SELECT id FROM pedidos WHERE id = %s", (pedido_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+
+        set_clauses = []
+        valores = []
+        
+        # REMOVIDO: O dicionário 'campo_para_coluna' não é mais necessário.
+
+        for campo, valor in update_data.items():
+            # O nome do 'campo' agora corresponde diretamente ao nome da 'coluna'
+            set_clauses.append(f"{campo} = %s")
+
+            if campo in ['lista_itens', 'formas_pagamento']:
+                valores.append(json.dumps(valor))
+            elif campo == 'endereco_expedicao':
+                valores.append(json.dumps(valor) if valor else None)
+            elif isinstance(valor, (float, decimal.Decimal)):
+                 valores.append(decimal.Decimal(str(valor)))
+            else:
+                 valores.append(valor)
+
+        if not set_clauses:
+             return {"mensagem": "Nenhum campo para atualizar."}
+
+        query = f"UPDATE pedidos SET {', '.join(set_clauses)} WHERE id = %s"
+        valores.append(pedido_id)
+
+        cursor.execute(query, tuple(valores))
+        conn.commit()
+
+        return {"mensagem": "Pedido atualizado com sucesso."}
+
+    except mysql.connector.Error as err:
+        raise HTTPException(status_code=500, detail=f"Erro ao atualizar pedido: {str(err)}")
 
     finally:
         cursor.close()
@@ -258,85 +334,6 @@ def listar_pedidos_paginado(
     finally:
         cursor.close()
         conn.close()
-
-
-@router.put("/pedidos/{pedido_id}")
-def atualizar_pedido(pedido_id: int, pedido: PedidoCreate):
-    conn = pool.get_connection()
-    cursor = conn.cursor()
-
-    try:
-        cursor.execute("SELECT id FROM pedidos WHERE id = %s", (pedido_id,))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Pedido não encontrado.")
-
-        cursor.execute("""
-            UPDATE pedidos SET
-                situacao_pedido = %s,
-                data_emissao = %s,
-                data_validade = %s,
-                cliente_id = %s,
-                cliente_nome = %s,
-                vendedor_id = %s,
-                vendedor_nome = %s,
-                origem_venda = %s,
-                tipo_frete = %s,
-                transportadora_id = %s,
-                transportadora_nome = %s,
-                valor_frete = %s,
-                total = %s,
-                desconto_total = %s,
-                total_com_desconto = %s,
-                lista_itens = %s,
-                formas_pagamento = %s,
-                data_finalizacao = %s,
-                ordem_finalizacao = %s,
-                observacao = %s,
-                endereco_expedicao = %s,
-                hora_expedicao = %s,
-                usuario_expedicao = %s,
-                numero_nf = %s,
-                data_nf = %s
-            WHERE id = %s
-        """, (
-            pedido.situacao_pedido,
-            pedido.data_emissao,
-            pedido.data_validade,
-            pedido.cliente,
-            pedido.cliente_nome,
-            pedido.vendedor,
-            pedido.vendedor_nome,
-            pedido.origem_venda,
-            pedido.tipo_frete,
-            pedido.transportadora,
-            pedido.transportadora_nome,
-            decimal.Decimal(str(pedido.valor_frete or 0.00)),
-            decimal.Decimal(str(pedido.total or 0.00)),
-            decimal.Decimal(str(pedido.desconto_total or 0.00)),
-            decimal.Decimal(str(pedido.total_com_desconto or 0.00)),
-            json.dumps([item.dict() for item in pedido.lista_itens]),
-            json.dumps([forma.dict() for forma in pedido.formas_pagamento]),
-            pedido.data_finalizacao,
-            decimal.Decimal(str(pedido.ordem_finalizacao)) if pedido.ordem_finalizacao is not None else None,
-            pedido.observacao,
-            json.dumps(pedido.endereco_expedicao) if pedido.endereco_expedicao else None,
-            pedido.hora_expedicao,
-            pedido.usuario_expedicao,
-            pedido.numero_nf,
-            pedido.data_nf,
-            pedido_id
-        ))
-
-        conn.commit()
-        return {"mensagem": "Pedido atualizado com sucesso."}
-
-    except mysql.connector.Error as err:
-        raise HTTPException(status_code=500, detail="Erro ao atualizar orçamento: " + str(err))
-
-    finally:
-        cursor.close()
-        conn.close()
-
 
 @router.post("/pedidos/validar_importacao")
 def validar_importacao_pedido(payload: ImportacaoPayloadPedido):
