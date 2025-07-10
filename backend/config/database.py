@@ -1,32 +1,38 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
-from dotenv import load_dotenv
+# config/database.py
 import os
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
+from dotenv import load_dotenv
 
 load_dotenv()
 
-# ✅ Corrigido: Incluindo a porta na DATABASE_URL
-# O formato correto é user:password@host:port/database_name
-DATABASE_URL = (
-    f"mysql+mysqlconnector://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
-    f"@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}" # Adicionado :DB_PORT
+# Constrói a URL de conexão a partir das variáveis de ambiente
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_HOST = os.getenv("DB_HOST")
+DB_PORT = os.getenv("DB_PORT")
+DB_NAME = os.getenv("DB_NAME")
+SQLALCHEMY_DATABASE_URL = f"mysql+mysqlconnector://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+
+# Cria a "engine" do SQLAlchemy, o ponto central de comunicação com o banco.
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    pool_pre_ping=True  # Verifica a conexão antes de cada uso, ideal para conexões remotas
 )
 
-engine = create_engine(DATABASE_URL)
+# Cria uma fábrica de sessões que será usada para criar sessões individuais para cada requisição.
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-def get_session():
+# Cria uma classe Base da qual todos os seus modelos de tabela do SQLAlchemy irão herdar.
+Base = declarative_base()
+
+def get_db():
     """
-    Função para obter uma nova sessão de banco de dados.
-    Deve ser usada com 'with' para garantir que a sessão seja fechada.
-    Exemplo:
-        with get_session() as db:
-            # use db aqui
+    Função de dependência do FastAPI para obter uma sessão do banco de dados.
+    Garante que a sessão seja sempre fechada após a requisição.
     """
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
-

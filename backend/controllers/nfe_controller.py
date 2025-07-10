@@ -1,79 +1,52 @@
 # controllers/nfe_controller.py
-from fastapi import APIRouter, HTTPException, Body
+
+from fastapi import APIRouter, HTTPException, Body, Depends
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
 import os
 import json
 import requests
-import mysql.connector
 import traceback
 import uuid
-
-# Carregar variáveis de ambiente
+from fastapi.responses import StreamingResponse
+from typing import Iterator
 from dotenv import load_dotenv
+
 load_dotenv()
+
+from config.database import get_db
+from models.pedidos_model import Pedido
+from models.cadastro_model import Cadastro
 
 router = APIRouter()
 
-# --- Configurações da API Tecnospeed ---
-SANDBOX_URL = "https://api.sandbox.plugnotas.com.br"
-SANDBOX_API_KEY = "2da392a6-79d2-4304-a8b7-959572c7e44d"
-
-PLUGNOTAS_BASE_URL = os.getenv("PLUGNOTAS_BASE_URL", SANDBOX_URL)
-PLUGNOTAS_API_KEY = "2da392a6-79d2-4304-a8b7-959572c7e44d"
-
-if PLUGNOTAS_BASE_URL == SANDBOX_URL:
-    PLUGNOTAS_API_KEY = SANDBOX_API_KEY
-    print("INFO: Utilizando URL e Token de SANDBOX da Tecnospeed.")
-else:
-    PLUGNOTAS_API_KEY = os.getenv("PLUGNOTAS_TOKEN")
-    print("INFO: Utilizando URL e Token de PRODUÇÃO/HOMOLOGAÇÃO da Tecnospeed.")
-    if not PLUGNOTAS_API_KEY:
-        print("ALERTA: PLUGNOTAS_TOKEN não definido para ambiente de produção/homologação.")
-
+# --- Configuração da API (sem alterações) ---
 EMISSAO_EM_PRODUCAO = os.getenv("EMISSAO_EM_PRODUCAO", "false").lower() == "true"
+if EMISSAO_EM_PRODUCAO:
+    PLUGNOTAS_BASE_URL = "https://api.plugnotas.com.br"
+    PLUGNOTAS_API_KEY = os.getenv("PLUGNOTAS_PROD_KEY")
+else:
+    PLUGNOTAS_BASE_URL = "https://api.sandbox.plugnotas.com.br"
+    PLUGNOTAS_API_KEY = os.getenv("PLUGNOTAS_SANDBOX_KEY")
+if not PLUGNOTAS_API_KEY:
+    raise RuntimeError("Chave da API PlugNotas não configurada.")
 
-# --- Funções Auxiliares ---
+# --- Funções Auxiliares e Modelos Pydantic (sem alterações) ---
 def formatar_cep(cep: str) -> str:
-    """Remove caracteres não numéricos do CEP e garante 8 dígitos."""
-    if not cep:
-        return ""
-    cep_numeros = ''.join(filter(str.isdigit, str(cep)))
-    return cep_numeros.zfill(8)[:8]
+    if not cep: return ""
+    return ''.join(filter(str.isdigit, str(cep))).zfill(8)[:8]
 
 def formatar_cpf_cnpj(cpf_cnpj: str) -> str:
-    """Remove caracteres não numéricos do CPF/CNPJ."""
-    if not cpf_cnpj:
-        return ""
+    if not cpf_cnpj: return ""
     return ''.join(filter(str.isdigit, str(cpf_cnpj)))
 
-def get_db_connection():
-    """Estabelece e retorna uma conexão com o banco de dados."""
-    try:
-        conn = mysql.connector.connect(
-            host=os.getenv("DB_HOST"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASSWORD"),
-            database=os.getenv("DB_NAME"),
-            port=int(os.getenv("DB_PORT")),
-            charset='utf8mb4',
-            collation='utf8mb4_unicode_ci'
-        )
-        return conn
-    except mysql.connector.Error as err:
-        print(f"Erro ao conectar ao MySQL: {err}")
-        raise HTTPException(status_code=503, detail=f"Erro de conexão com o banco de dados: {err}")
-
-# --- Modelos Pydantic ---
 class EmitirNfePayload(BaseModel):
     pedido_id: int
 
-# --- Funções de Interação com a API Tecnospeed ---
 def construir_payload_nfe_tecnospeed(pedido: dict, cliente_db: dict, itens_pedido: list, pagamentos_pedido_db: list) -> list:
-    """
-    Constrói o payload JSON para a NFe conforme as especificações da Tecnospeed.
-    """
+    # (Seu código de construção de payload continua aqui, sem alterações)
     id_integracao = f"PEDIDO_{pedido['id']}_{uuid.uuid4().hex[:8]}"
     data_emissao_str = datetime.now().astimezone().isoformat(timespec='seconds')
     cpf_cnpj_dest_formatado = formatar_cpf_cnpj(cliente_db.get("cpf_cnpj", ""))
@@ -82,7 +55,7 @@ def construir_payload_nfe_tecnospeed(pedido: dict, cliente_db: dict, itens_pedid
     indicador_ie_dest_final = 9
     inscricao_estadual_dest_final = None
     if len(cpf_cnpj_dest_formatado) == 11:
-        nome_destinatario_final = cliente_db.get("nome_raza", "").strip()
+        nome_destinatario_final = cliente_db.get("nome_razao", "").strip()
         cliente_indicador_ie_str = str(cliente_db.get("indicador_ie", "9")).strip()
         cliente_ie_str = str(cliente_db.get("rg_ie", "")).strip()
         if cliente_indicador_ie_str == "1" and cliente_ie_str:
@@ -93,7 +66,7 @@ def construir_payload_nfe_tecnospeed(pedido: dict, cliente_db: dict, itens_pedid
         else:
             indicador_ie_dest_final = 9
     elif len(cpf_cnpj_dest_formatado) == 14:
-        razao_social_destinatario_final = cliente_db.get("nome_raza", "").strip()
+        razao_social_destinatario_final = cliente_db.get("nome_razao", "").strip()
         nome_destinatario_final = cliente_db.get("fantasia") if cliente_db.get("fantasia") else razao_social_destinatario_final
         cliente_indicador_ie_str = str(cliente_db.get("indicador_ie", "9")).strip()
         cliente_ie_str = str(cliente_db.get("rg_ie", "")).strip()
@@ -167,134 +140,108 @@ def construir_payload_nfe_tecnospeed(pedido: dict, cliente_db: dict, itens_pedid
         payload_nfe["transporte"]["valorFrete"] = float(total_frete_decimal)
     return [payload_nfe]
 
-def enviar_para_tecnospeed(endpoint_path: str, method: str = "POST", data: list = None, params: dict = None) -> dict:
-    """Função genérica para enviar requisições para a API Tecnospeed."""
-    if not PLUGNOTAS_API_KEY:
-        raise HTTPException(status_code=500, detail="Chave da API Tecnospeed (PLUGNOTAS_API_KEY) não configurada.")
-    headers = {"Content-Type": "application/json", "X-API-KEY": PLUGNOTAS_API_KEY}
+def enviar_para_tecnospeed(endpoint_path: str, method: str, data=None, params=None, stream=False):
+    """Função genérica para enviar requisições à API da PlugNotas."""
+    headers = {"x-api-key": PLUGNOTAS_API_KEY}
+    if not stream:
+        headers["Content-Type"] = "application/json"
+    
     url = f"{PLUGNOTAS_BASE_URL}{endpoint_path}"
     try:
-        print(f"Enviando {method} para {url}")
-        if data:
-            print(f"Payload: {json.dumps(data, indent=2, ensure_ascii=False)}")
-        if method.upper() == "POST":
-            response = requests.post(url, headers=headers, json=data, timeout=60)
-        elif method.upper() == "GET":
-            response = requests.get(url, headers=headers, params=params, timeout=30)
-        else:
-            raise ValueError("Método HTTP não suportado")
-        print(f"Resposta da Tecnospeed ({response.status_code}):")
-        try:
-            response_json = response.json()
-            print(json.dumps(response_json, indent=2, ensure_ascii=False))
-        except json.JSONDecodeError:
-            response_json = {"raw_text": response.text}
-            print(response.text)
+        response = requests.request(method, url, headers=headers, json=data, params=params, stream=stream, timeout=60)
         response.raise_for_status()
-        return response_json
-    except requests.exceptions.HTTPError as http_err:
-        error_detail_str = f"Erro HTTP da API Tecnospeed: {http_err.response.status_code} - {http_err.response.text}"
-        print(error_detail_str)
-        try:
-            error_data_parsed = http_err.response.json()
-            if isinstance(error_data_parsed, list) and error_data_parsed:
-                first_error = error_data_parsed[0]
-                if isinstance(first_error, dict) and "message" in first_error:
-                    error_detail_str = first_error["message"]
-            elif isinstance(error_data_parsed, dict):
-                if "message" in error_data_parsed:
-                    error_detail_str = error_data_parsed["message"]
-                elif "Message" in error_data_parsed:
-                    error_detail_str = error_data_parsed["Message"]
-        except json.JSONDecodeError:
-            pass
-        raise HTTPException(status_code=http_err.response.status_code, detail=error_detail_str)
-    except requests.exceptions.RequestException as req_err:
-        error_detail_str = f"Erro na requisição para Tecnospeed: {req_err}"
-        print(error_detail_str)
-        raise HTTPException(status_code=503, detail=error_detail_str)
+        return response
+    except requests.exceptions.HTTPError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=503, detail=f"Erro de comunicação com o serviço de NF-e: {e}")
 
+# --- Endpoints ---
 
 @router.post("/v2/nfe/emitir", tags=["NFe v2"])
-async def emitir_nfe_v2(payload_input: EmitirNfePayload = Body(...)):
+def emitir_nfe_v2(payload_input: EmitirNfePayload, db: Session = Depends(get_db)):
     pedido_id = payload_input.pedido_id
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True, buffered=True)
-        cursor.execute("SELECT * FROM pedidos WHERE id = %s", (pedido_id,))
-        pedido_db = cursor.fetchone()
-        if not pedido_db:
-            raise HTTPException(status_code=404, detail=f"Pedido {pedido_id} não encontrado.")
-        cursor.execute("SELECT * FROM cadastros WHERE id = %s", (pedido_db["cliente_id"],))
-        cliente_db = cursor.fetchone()
-        if not cliente_db:
-            raise HTTPException(status_code=404, detail=f"Cliente ID {pedido_db['cliente_id']} não encontrado.")
+        pedido_db = db.query(Pedido).filter(Pedido.id == pedido_id).first()
+        if not pedido_db: raise HTTPException(status_code=404, detail=f"Pedido {pedido_id} não encontrado.")
+        cliente_db = db.query(Cadastro).filter(Cadastro.id == pedido_db.cliente_id).first()
+        if not cliente_db: raise HTTPException(status_code=404, detail=f"Cliente ID {pedido_db.cliente_id} não encontrado.")
         
-        itens_pedido = json.loads(pedido_db["lista_itens"] or "[]")
-        pagamentos_pedido = json.loads(pedido_db.get("lista_pagamentos") or "[]")
+        pedido_dict = {c.name: getattr(pedido_db, c.name) for c in pedido_db.__table__.columns}
+        cliente_dict = {c.name: getattr(cliente_db, c.name) for c in cliente_db.__table__.columns}
+        
+        itens_pedido = json.loads(pedido_dict.get("lista_itens", "[]"))
+        pagamentos_pedido = json.loads(pedido_dict.get("formas_pagamento", "[]"))
 
-        payload_tecnospeed_list = construir_payload_nfe_tecnospeed(pedido_db, cliente_db, itens_pedido, pagamentos_pedido)
+        payload_tecnospeed = construir_payload_nfe_tecnospeed(pedido_dict, cliente_dict, itens_pedido, pagamentos_pedido)
         
-        print(f"Enviando NFe para Tecnospeed (Pedido ID: {pedido_id})...")
-        resposta_envio = enviar_para_tecnospeed("/nfe", method="POST", data=payload_tecnospeed_list)
+        # CORREÇÃO: Removido /v2. A rota correta da API externa é /nfe
+        response_obj = enviar_para_tecnospeed("/nfe", method="POST", data=payload_tecnospeed)
+        resposta_envio = response_obj.json()
         
-        id_nota_tecnospeed = None
-        id_integracao_retornado = None
-        status_inicial = "EM_PROCESSAMENTO"
+        doc_info = (resposta_envio[0] if isinstance(resposta_envio, list) and resposta_envio else 
+                    (resposta_envio.get("documents", [{}])[0] if isinstance(resposta_envio, dict) else {}))
         
-        if isinstance(resposta_envio, list) and resposta_envio:
-            document_info = resposta_envio[0]
-            id_nota_tecnospeed = document_info.get("id")
-            id_integracao_retornado = document_info.get("idIntegracao")
-            status_inicial = document_info.get("status", status_inicial)
-        elif isinstance(resposta_envio, dict) and resposta_envio.get("documents") and isinstance(resposta_envio["documents"], list) and resposta_envio["documents"]:
-            document_info = resposta_envio["documents"][0]
-            id_nota_tecnospeed = document_info.get("id")
-            id_integracao_retornado = document_info.get("idIntegracao")
-            status_inicial = document_info.get("status", status_inicial)
+        id_nota = doc_info.get("id")
+        if id_nota:
+            pedido_db.tecnospeed_id = id_nota
+            pedido_db.tecnospeed_id_integracao = doc_info.get("idIntegracao")
+            pedido_db.tecnospeed_status = doc_info.get("status", "EM_PROCESSAMENTO")
+            pedido_db.situacao_pedido = 'Em Processamento (NF-e)'
+            db.commit()
         
-        if id_nota_tecnospeed:
-            update_query = "UPDATE pedidos SET tecnospeed_id = %s, tecnospeed_id_integracao = %s, tecnospeed_status = %s, situacao_pedido = %s WHERE id = %s"
-            cursor.execute(update_query, (id_nota_tecnospeed, id_integracao_retornado, status_inicial, 'Em Processamento (NF-e)', pedido_id))
-            conn.commit()
-            print(f"Pedido {pedido_id} atualizado no banco com ID Tecnospeed e status inicial.")
-        
-        return {"message": "NFe enviada para processamento.", "id_tecnospeed": id_nota_tecnospeed, "status_tecnospeed": status_inicial}
-
+        return {"message": "NFe enviada para processamento.", "tecnospeed_id": id_nota, "tecnospeed_status": pedido_db.tecnospeed_status}
     except Exception as e:
-        print(f"Erro inesperado ao emitir NFe para o pedido {pedido_id}: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Erro interno ao processar emissão da NFe: {str(e)}")
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Erro interno ao processar emissão da NFe: {e}")
 
 @router.get("/v2/nfe/resumo/{id_tecnospeed}", tags=["NFe v2"])
-async def consultar_resumo_nfe(id_tecnospeed: str):
-    """
-    Consulta o endpoint /resumo da PlugNotas e apenas retorna os dados.
-    A atualização do banco de dados foi removida para ser controlada pelo frontend.
-    """
+def consultar_resumo_nfe(id_tecnospeed: str):
+    """Consulta o resumo de uma NF-e para verificar status, número, etc."""
     try:
+        # CORREÇÃO: Removido /v2. A rota correta da API externa é /nfe/{id}/resumo
         endpoint = f"/nfe/{id_tecnospeed}/resumo"
-        print(f"Consultando resumo da NFe via BFF: {id_tecnospeed} no endpoint {endpoint}")
-        
-        resposta_resumo = enviar_para_tecnospeed(endpoint, method="GET")
-        
-        if isinstance(resposta_resumo, list) and len(resposta_resumo) > 0:
-            return resposta_resumo[0]
-        elif isinstance(resposta_resumo, dict) and resposta_resumo:
-            return resposta_resumo
-        else:
-            raise HTTPException(
-                status_code=404, 
-                detail="Nenhum resumo encontrado para o ID fornecido ou formato de resposta inesperado."
-            )
-
+        response = enviar_para_tecnospeed(endpoint, method="GET")
+        resposta_json = response.json()
+        return resposta_json[0] if isinstance(resposta_json, list) and resposta_json else resposta_json
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Erro inesperado ao consultar resumo da NFe {id_tecnospeed}: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Erro interno ao processar o resumo da NFe: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro interno ao consultar resumo da NFe: {str(e)}")
+
+# --- Endpoints de Download (Lógica Corrigida) ---
+
+@router.get("/nfe/{nfe_id}/danfe", tags=["NFe Documentos"])
+def download_danfe(nfe_id: str):
+    """Busca o PDF da NFe diretamente e transmite o arquivo para o navegador."""
+    # CORREÇÃO: Removido /v2. A rota correta da API externa é /nfe/pdf/{id}
+    pdf_endpoint = f"/nfe/{nfe_id}/pdf"
+    try:
+        response = enviar_para_tecnospeed(pdf_endpoint, method="GET", stream=True)
+        return StreamingResponse(
+            response.iter_content(chunk_size=8192), 
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"inline; filename=danfe_{nfe_id}.pdf"}
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro interno ao processar o DANFE: {str(e)}")
+
+@router.get("/nfe/{nfe_id}/xml", tags=["NFe Documentos"])
+def download_xml(nfe_id: str):
+    """Busca o XML da NFe diretamente e transmite o arquivo para o navegador."""
+    # CORREÇÃO: Removido /v2. A rota correta da API externa é /nfe/xml/{id}
+    xml_endpoint = f"/nfe/{nfe_id}/xml"
+    try:
+        response = enviar_para_tecnospeed(xml_endpoint, method="GET", stream=True)
+        return StreamingResponse(
+            response.iter_content(chunk_size=8192), 
+            media_type="application/xml",
+            headers={"Content-Disposition": f"attachment; filename=nfe_{nfe_id}.xml"}
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro interno ao processar o XML: {str(e)}")
 

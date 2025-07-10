@@ -4,7 +4,7 @@ export default function CampoValorMonetario({
   label = "Valor",
   name,
   value = "",
-  onChange,
+  onChange = () => {}, // AQUI ESTÁ A CORREÇÃO
   obrigatorio = false,
   colSpan = false,
   placeholder = "R$ 0,00",
@@ -31,17 +31,14 @@ export default function CampoValorMonetario({
     if (disabled) return;
 
     const key = e.key;
-    const selection = window.getSelection();
     const input = inputRef.current;
-
-    // Detectar se o campo está totalmente ou parcialmente selecionado
     const tudoSelecionado = input.selectionStart !== input.selectionEnd;
 
     if (key === "Backspace" || key === "Delete") {
       e.preventDefault();
       setInterno((prev) => {
         if (tudoSelecionado || prev.length <= 1) {
-          atualizarCampo("0"); // 🔥 Limpa tudo se algo estiver selecionado ou tiver 1 dígito
+          atualizarCampo("0");
           return "0";
         } else {
           const novo = prev.slice(0, -1) || "0";
@@ -57,7 +54,7 @@ export default function CampoValorMonetario({
         return novo;
       });
     } else {
-      e.preventDefault(); // Bloqueia qualquer outra tecla
+      e.preventDefault();
     }
   };
 
@@ -65,6 +62,7 @@ export default function CampoValorMonetario({
     const valorNumerico = Number(valorInterno) / 100;
     const valorFormatado = formatarValor(valorInterno);
 
+    // Esta chamada agora é segura, pois onChange sempre será uma função.
     onChange({
       target: {
         name,
@@ -86,7 +84,7 @@ export default function CampoValorMonetario({
         name={name}
         value={formatarValor(interno)}
         onKeyDown={handleKeyDown}
-        onChange={() => { }} // Bloqueia onChange normal
+        onChange={() => {}}
         placeholder={placeholder}
         disabled={disabled}
         className={`w-full h-10 border border-gray-300 px-3 py-2 rounded text-sm text-right 

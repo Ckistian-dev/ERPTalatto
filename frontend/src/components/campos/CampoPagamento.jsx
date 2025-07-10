@@ -1,228 +1,178 @@
-import { useState, useEffect, useMemo } from "react";
-import { useAuth } from "@/context/AuthContext";
-import CampoDropdownEditavel from "@/components/campos/CampoDropdownEditavel";
-import CampoValorMonetario from "@/components/campos/CampoValorMonetario";
-import CampoNumSetas from "@/components/campos/CampoNumSetas";
+import React, { useEffect, useMemo, useState } from 'react';
+import { useAuth } from '@/context/AuthContext';
+import CampoDropdownEditavel from '@/components/campos/CampoDropdownEditavel';
+import CampoValorMonetario from '@/components/campos/CampoValorMonetario';
+import CampoNumSetas from '@/components/campos/CampoNumSetas';
+import { X, Plus } from 'lucide-react';
 
 export default function CampoPagamento({ form, setForm, handleChange, tipo }) {
     const { usuario } = useAuth();
-    const [formasPagamento, setFormasPagamento] = useState(form.formas_pagamento || [{ tipo: "" }]);
+    const formasPagamento = form.formas_pagamento || [];
 
-    const adicionarFormaPagamento = () => {
-        setFormasPagamento((prev) => [...prev, { tipo: "" }]);
-        console.log("formasPagamento mapeado:", formasPagamento.map(limparFormaPagamento));
-    };
-
-    const handleFormaChange = (index, field, value) => {
-        setFormasPagamento((prev) => {
-            const novasFormas = [...prev];
-            novasFormas[index] = {
-                ...novasFormas[index],
-                [field]: field === "valor_parcela" ? Number(value) : value,
-            };
-            return novasFormas;
-        });
-    };
-
-
-    const limparFormaPagamento = (forma) => {
-        const limpa = {
-            tipo: forma.tipo,
-        };
-
-        if (forma.tipo === "Pix") limpa.valor_pix = Number(forma.valor_pix || 0);
-        if (forma.tipo === "Boleto") limpa.valor_boleto = Number(forma.valor_boleto || 0);
-        if (forma.tipo === "Dinheiro") limpa.valor_dinheiro = Number(forma.valor_dinheiro || 0);
-        if (forma.tipo === "Parcelamento") {
-            limpa.parcelas = Number(forma.parcelas || 1);
-
-            const totalProdutos = Number(form.total) || 0;
-            const valorFrete = Number(form.valor_frete) || 0;
-            const totalNota = form.total_com_desconto !== undefined && form.total_com_desconto !== ""
-                ? Number(form.total_com_desconto)
-                : totalProdutos + valorFrete;
-
-            let valorOutros = 0;
-            formasPagamento.forEach((f) => {
-                if (f.tipo === "Pix" && f.valor_pix) valorOutros += Number(f.valor_pix);
-                if (f.tipo === "Boleto" && f.valor_boleto) valorOutros += Number(f.valor_boleto);
-                if (f.tipo === "Dinheiro" && f.valor_dinheiro) valorOutros += Number(f.valor_dinheiro);
-            });
-
-            const restante = totalNota - valorOutros;
-            const parcelas = limpa.parcelas || 1;
-
-            limpa.valor_parcela = Number((restante / parcelas).toFixed(2));
+    const normalizeValor = (valor) => {
+        if (typeof valor === 'number') return isNaN(valor) ? 0 : valor;
+        if (typeof valor === 'string' && valor.trim() !== '') {
+            const valorLimpo = valor.trim().replace(/\./g, '').replace(',', '.');
+            const parsed = parseFloat(valorLimpo);
+            return isNaN(parsed) ? 0 : parsed;
         }
-
-        return limpa;
+        return 0;
     };
-
-
-    const calcularValorParcela = useMemo(() => {
-        const totalProdutos = Number(form.total) || 0;
-        const valorFrete = Number(form.valor_frete) || 0;
-        const totalNota = form.total_com_desconto !== undefined && form.total_com_desconto !== ""
-            ? Number(form.total_com_desconto)
-            : totalProdutos + valorFrete;
-
-        let valorOutrosPagamentos = 0;
-
-        formasPagamento.forEach((forma) => {
-            if (forma.tipo === "Pix" && forma.valor_pix) valorOutrosPagamentos += Number(forma.valor_pix);
-            if (forma.tipo === "Boleto" && forma.valor_boleto) valorOutrosPagamentos += Number(forma.valor_boleto);
-            if (forma.tipo === "Dinheiro" && forma.valor_dinheiro) valorOutrosPagamentos += Number(forma.valor_dinheiro);
-        });
-
-        const formaParcelamento = formasPagamento.find((f) => f.tipo === "Parcelamento");
-        const parcelas = formaParcelamento ? Number(formaParcelamento.parcelas) || 1 : 1;
-
-        const valorRestante = totalNota - valorOutrosPagamentos;
-
-        if (parcelas > 0 && valorRestante > 0) {
-            return (valorRestante / parcelas).toFixed(2);
-        }
-
-        return "0.00";
-    }, [formasPagamento, form.total, form.valor_frete, form.total_com_desconto]);
-
-
+    
+    const [totalManualFoiEditado, setTotalManualFoiEditado] = useState(
+        () => normalizeValor(form.total_com_desconto) > 0 || normalizeValor(form.desconto_total) > 0
+    );
 
     useEffect(() => {
-        const totalProdutos = Number(form.total) || 0;
-        const valorFrete = Number(form.valor_frete) || 0;
-        const totalNota = form.total_com_desconto !== undefined && form.total_com_desconto !== ""
-            ? Number(form.total_com_desconto)
-            : totalProdutos + valorFrete;
-
-        let valorPago = 0;
-
-        formasPagamento.forEach((forma) => {
-            if (forma.tipo === "Pix" && forma.valor_pix) valorPago += Number(forma.valor_pix);
-            if (forma.tipo === "Boleto" && forma.valor_boleto) valorPago += Number(forma.valor_boleto);
-            if (forma.tipo === "Dinheiro" && forma.valor_dinheiro) valorPago += Number(forma.valor_dinheiro);
-            if (forma.tipo === "Parcelamento") {
-                let valorOutros = 0;
-                formasPagamento.forEach((f) => {
-                    if (f.tipo === "Pix" && f.valor_pix) valorOutros += Number(f.valor_pix);
-                    if (f.tipo === "Boleto" && f.valor_boleto) valorOutros += Number(f.valor_boleto);
-                    if (f.tipo === "Dinheiro" && f.valor_dinheiro) valorOutros += Number(f.valor_dinheiro);
-                });
-                valorPago += totalNota - valorOutros;
-            }
+        const totalProdutos = normalizeValor(form.total);
+        const valorFrete = normalizeValor(form.valor_frete);
+        const manual = normalizeValor(form.total_com_desconto);
+        
+        const totalNota = totalManualFoiEditado ? manual : totalProdutos + valorFrete;
+        
+        let pagos = 0;
+        formasPagamento.forEach(f => {
+            pagos += normalizeValor(f.valor_pix);
+            pagos += normalizeValor(f.valor_boleto);
+            pagos += normalizeValor(f.valor_dinheiro);
         });
 
-        const descontoCalculado = (totalProdutos + valorFrete) - totalNota;
+        const parc = formasPagamento.find(f => f.tipo === 'Parcelamento');
+        const numParcels = parc ? (parseInt(parc.parcelas, 10) || 1) : 1;
 
-        const formasLimpa = formasPagamento.map(limparFormaPagamento);
+        const restante = totalNota - pagos;
+        const valorParc = (restante > 0 && numParcels > 0) ? restante / numParcels : 0;
+        
+        const descontoCalc = (totalProdutos + valorFrete) - totalNota;
 
-        console.log("formas_pagamento final:", formasLimpa);
+        const updates = {};
+        let hasChanges = false;
 
-        setForm((prev) => ({
-            ...prev,
-            formas_pagamento: formasLimpa,
-            desconto_total: descontoCalculado >= 0 ? descontoCalculado.toFixed(2) : "0.00",
+        const novasFormas = formasPagamento.map(f => {
+            if (f.tipo === 'Parcelamento') {
+                const valorAntigo = normalizeValor(f.valor_parcela).toFixed(2);
+                const valorNovo = normalizeValor(valorParc).toFixed(2);
+                if (valorAntigo !== valorNovo) {
+                    return { ...f, valor_parcela: valorParc };
+                }
+            }
+            return f;
+        });
+
+        if (JSON.stringify(formasPagamento) !== JSON.stringify(novasFormas)) {
+            updates.formas_pagamento = novasFormas;
+            hasChanges = true;
+        }
+
+        if (!totalManualFoiEditado) {
+            const descontoAtual = normalizeValor(form.desconto_total);
+            const descontoNovo = descontoCalc > 0 ? descontoCalc : 0;
+            if (descontoAtual.toFixed(2) !== descontoNovo.toFixed(2)) {
+                updates.desconto_total = descontoNovo;
+                updates.total_com_desconto = totalProdutos + valorFrete - descontoNovo;
+                hasChanges = true;
+            }
+        }
+        
+        if (hasChanges) {
+            setForm(prev => ({ ...prev, ...updates }));
+        }
+    }, [form.total, form.valor_frete, form.total_com_desconto, form.formas_pagamento, totalManualFoiEditado, setForm]);
+
+
+    const handleFormaChange = (index, field, value) => {
+        const novasFormas = formasPagamento.map((forma, i) => {
+            if (i === index) {
+                if (field === "tipo") {
+                    return { tipo: value, valor_pix: 0, valor_boleto: 0, valor_dinheiro: 0, parcelas: 1, valor_parcela: 0 };
+                }
+                return { ...forma, [field]: value };
+            }
+            return forma;
+        });
+        setForm(prev => ({ ...prev, formas_pagamento: novasFormas }));
+    };
+
+    const handleTotalManualChange = (e) => {
+        if (!totalManualFoiEditado) {
+            setTotalManualFoiEditado(true);
+        }
+        handleChange(e);
+    };
+
+    const adicionarFormaPagamento = () => {
+        setForm(prev => ({ 
+            ...prev, 
+            formas_pagamento: [
+                ...prev.formas_pagamento, 
+                { tipo: "", valor_pix: 0, valor_boleto: 0, valor_dinheiro: 0, parcelas: 1, valor_parcela: 0 }
+            ]
         }));
-    }, [formasPagamento, form.total, form.valor_frete, form.total_com_desconto]);
+    };
 
+    const removerFormaPagamento = (index) => {
+        setForm(prev => ({
+            ...prev,
+            formas_pagamento: prev.formas_pagamento.filter((_, i) => i !== index)
+        }));
+    };
 
+    const valorParcelaAtual = useMemo(() => {
+        const parcela = formasPagamento.find(f => f.tipo === "Parcelamento");
+        return parcela?.valor_parcela || 0;
+    }, [formasPagamento]);
 
     return (
-        <div className="col-span-2 flex flex-col gap-6">
+        // LAYOUT RESTAURADO: Voltando para col-span-2 para ocupar as duas colunas do grid pai
+        <div className="col-span-2 flex flex-col gap-4">
             {formasPagamento.map((forma, index) => (
-                <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end rounded-md">
+                <div key={index} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3 items-end rounded-md border p-4 relative">
                     <CampoDropdownEditavel
                         label="Tipo de Pagamento"
-                        name={`tipo_${index}`}
+                        name={`tipo_pagamento_${index}`}
                         value={forma.tipo}
                         onChange={(e) => handleFormaChange(index, "tipo", e.target.value)}
-                        tipo="condicao_pagamento"
+                        tipo={tipo === "venda" ? "condicao_pagamento_venda_options" : "condicao_pagamento_options"}
                         usuario={usuario}
+                        obrigatorio
+                        placeholder="Selecione o Tipo"
                     />
-
-                    {forma.tipo === "Pix" && (
-                        <CampoValorMonetario
-                            label="Valor Pix"
-                            name={`valor_pix_${index}`}
-                            value={forma.valor_pix || ""}
-                            onChange={(e) => handleFormaChange(index, "valor_pix", e.target.value)}
-                        />
-                    )}
-
-                    {forma.tipo === "Boleto" && (
-                        <CampoValorMonetario
-                            label="Valor Boleto"
-                            name={`valor_boleto_${index}`}
-                            value={forma.valor_boleto || ""}
-                            onChange={(e) => handleFormaChange(index, "valor_boleto", e.target.value)}
-                        />
-                    )}
-
-                    {forma.tipo === "Dinheiro" && (
-                        <CampoValorMonetario
-                            label="Valor Dinheiro"
-                            name={`valor_dinheiro_${index}`}
-                            value={forma.valor_dinheiro || ""}
-                            onChange={(e) => handleFormaChange(index, "valor_dinheiro", e.target.value)}
-                        />
-                    )}
-
+                    {forma.tipo === "Pix" && <CampoValorMonetario label="Valor Pix" name={`valor_pix_${index}`} value={forma.valor_pix || ""} onChange={(e) => handleFormaChange(index, "valor_pix", e.target.value)} />}
+                    {forma.tipo === "Boleto" && <CampoValorMonetario label="Valor Boleto" name={`valor_boleto_${index}`} value={forma.valor_boleto || ""} onChange={(e) => handleFormaChange(index, "valor_boleto", e.target.value)} />}
+                    {forma.tipo === "Dinheiro" && <CampoValorMonetario label="Valor Dinheiro" name={`valor_dinheiro_${index}`} value={forma.valor_dinheiro || ""} onChange={(e) => handleFormaChange(index, "valor_dinheiro", e.target.value)} />}
                     {forma.tipo === "Parcelamento" && (
                         <>
-                            <CampoNumSetas
-                                label="Parcelas"
-                                name={`parcelas_${index}`}
-                                value={forma.parcelas || 1}
-                                onChange={(e) => handleFormaChange(index, "parcelas", e.target.value)}
-                            />
-                            <CampoValorMonetario
-                                label="Valor Parcela"
-                                name={`valor_parcela_${index}`}
-                                value={forma.valor_parcela !== undefined ? forma.valor_parcela : calcularValorParcela}
-                                onChange={(e) => handleFormaChange(index, "valor_parcela", e.target.value)}
-                            />
+                            <CampoNumSetas label="Nº Parcelas" name={`parcelas_${index}`} value={forma.parcelas || 1} onChange={(e) => handleFormaChange(index, "parcelas", parseInt(e.target.value, 10) || 1)} min={1} />
+                            <CampoValorMonetario label="Valor da Parcela" name={`valor_parcela_${index}`} value={valorParcelaAtual} disabled />
                         </>
+                    )}
+                    {formasPagamento.length > 1 && (
+                        <div className="absolute top-2 right-2">
+                            <button type="button" onClick={() => removerFormaPagamento(index)} className="text-red-500 hover:text-red-700" title="Remover forma de pagamento">
+                                <X size={20} />
+                            </button>
+                        </div>
                     )}
                 </div>
             ))}
-
             <button
                 type="button"
                 onClick={adicionarFormaPagamento}
-                className="self-start bg-teal-600 hover:bg-teal-700 text-white font-semibold px-6 py-2 rounded-md"
+                className="self-start bg-teal-600 hover:bg-teal-700 text-white font-semibold px-4 py-2 rounded-md flex items-center gap-2 mt-2"
             >
-                Adicionar Forma de Pagamento
+                <Plus size={20} />Adicionar Forma de Pagamento
             </button>
 
-            {/* Totais */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-8 items-end">
-                <CampoValorMonetario
-                    label="Total Produtos"
-                    name="total"
-                    value={form.total || 0.00}
-                    onChange={() => { }}
-                    disabled
-                />
-                <CampoValorMonetario
-                    label="Total Frete"
-                    name="valor_frete"
-                    value={form.valor_frete || 0.00}
-                    onChange={() => { }}
-                    disabled
-                />
-                <CampoValorMonetario
-                    label="Total de Descontos"
-                    name="desconto_total"
-                    value={form.desconto_total || 0.00}
-                    onChange={() => { }}
-                    disabled
-                />
-                <CampoValorMonetario
-                    label="Total da Nota"
-                    name="total_com_desconto"
-                    value={form.total_com_desconto || 0.00}
-                    onChange={handleChange}
-                    placeholder="0,00"
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-8 pt-4 border-t items-end">
+                <CampoValorMonetario label="Total Produtos" name="total" value={form.total || 0} disabled />
+                <CampoValorMonetario label="Total Frete" name="valor_frete" value={form.valor_frete || 0} disabled />
+                <CampoValorMonetario label="Total de Descontos" name="desconto_total" value={form.desconto_total || 0} disabled />
+                <CampoValorMonetario 
+                    label="Total da Nota" 
+                    name="total_com_desconto" 
+                    value={form.total_com_desconto || 0} 
+                    onChange={handleTotalManualChange} 
+                    placeholder="0,00" 
                 />
             </div>
         </div>

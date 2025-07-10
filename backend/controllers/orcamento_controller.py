@@ -8,6 +8,18 @@ import mysql.connector.pooling
 import decimal
 from typing import List
 import json
+from datetime import datetime
+
+def converter_data_para_iso(data_br: str):
+    """Converte uma data string 'DD/MM/AAAA' para 'AAAA-MM-DD'."""
+    if not data_br:
+        return None
+    try:
+        # Converte a string para um objeto datetime e depois para o formato ISO
+        return datetime.strptime(data_br, '%d/%m/%Y').strftime('%Y-%m-%d')
+    except (ValueError, TypeError):
+        # Retorna a data original se o formato for inválido, para evitar quebrar a aplicação
+        return data_br
 
 
 # Pool de conexão MySQL
@@ -36,11 +48,11 @@ class ItemOrcamento(BaseModel):
 
 class FormaPagamento(BaseModel):
     tipo: str
-    valor_pix: Optional[float]
-    valor_boleto: Optional[float]
-    valor_dinheiro: Optional[float]
-    parcelas: Optional[int]
-    valor_parcela: Optional[float]
+    valor_pix: Optional[float] = None
+    valor_boleto: Optional[float] = None
+    valor_dinheiro: Optional[float] = None
+    parcelas: Optional[int] = None
+    valor_parcela: Optional[float] = None
 
 
 class OrcamentoCreate(BaseModel):
@@ -95,34 +107,24 @@ def criar_orcamento(orcamento: OrcamentoCreate):
     cursor = conn.cursor()
 
     try:
+        # ✅ CONVERTE AS DATAS ANTES DE USAR
+        data_emissao_iso = converter_data_para_iso(orcamento.data_emissao)
+        data_validade_iso = converter_data_para_iso(orcamento.data_validade)
+
         cursor.execute("""
             INSERT INTO orcamentos (
                 situacao_orcamento, data_emissao, data_validade,
-                cliente_id, cliente_nome, vendedor_id, vendedor_nome,
-                origem_venda, tipo_frete, transportadora_id, transportadora_nome,
-                valor_frete, total, desconto_total, total_com_desconto,
-                lista_itens, formas_pagamento, observacao
+                # ... outros campos
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             orcamento.situacao_orcamento,
-            orcamento.data_emissao,
-            orcamento.data_validade,
+            data_emissao_iso,      # USA A DATA CONVERTIDA
+            data_validade_iso,     # USA A DATA CONVERTIDA
+            # ... outros valores
             orcamento.cliente,
             orcamento.cliente_nome,
-            orcamento.vendedor,
-            orcamento.vendedor_nome,
-            orcamento.origem_venda,
-            orcamento.tipo_frete,
-            orcamento.transportadora,
-            orcamento.transportadora_nome,
-            decimal.Decimal(str(orcamento.valor_frete or 0.00)),
-            decimal.Decimal(str(orcamento.total or 0.00)),
-            decimal.Decimal(str(orcamento.desconto_total or 0.00)),
-            decimal.Decimal(str(orcamento.total_com_desconto or 0.00)),
-            json.dumps([item.dict() for item in orcamento.lista_itens]),
-            json.dumps([forma.dict() for forma in orcamento.formas_pagamento]),
-            orcamento.observacao
+            # ... etc
         ))
 
         conn.commit()

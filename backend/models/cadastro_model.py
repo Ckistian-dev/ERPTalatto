@@ -1,3 +1,4 @@
+# models/cadastro_model.py
 from sqlalchemy import Column, Integer, String, DateTime, func
 from config.database import Base # Supondo que Base seja seu declarative_base do SQLAlchemy
 
@@ -14,7 +15,7 @@ class Cadastro(Base):
     celular = Column(String(20))  # Armazenar apenas números ou formatado?
     email = Column(String(100), unique=True, index=True, nullable=False)
     cpf_cnpj = Column(String(20), unique=True, index=True) # Armazenar apenas números
-    rg_ie = Column(String(30)) # Inscrição Estadual ou RG
+    ie = Column(String(30)) # Inscrição Estadual
 
     logradouro = Column(String(100), nullable=False)
     numero = Column(String(20), nullable=False)
@@ -41,4 +42,3 @@ class Cadastro(Base):
     # Adicionar __repr__ para facilitar a depuração (opcional)
     def __repr__(self):
         return f"<Cadastro(id={self.id}, nome_razao='{self.nome_razao}', cpf_cnpj='{self.cpf_cnpj}')>"
-

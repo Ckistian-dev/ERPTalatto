@@ -59,18 +59,21 @@ export default function CampoItens({
                 total_com_desconto: subtotal // Se não há desconto por item, é o subtotal
             };
         });
-        
+
         return itensComTotaisAtualizados.reduce((acc, item) => acc + (item.total_com_desconto || 0), 0);
     };
 
     const getPrecoUnitario = (produtoId, variacaoId, tabelaPrecoId) => {
-        if (!precosDisponiveis || precosDisponiveis.length === 0) return 0;
-    
-        const precoEncontrado = precosDisponiveis.find(p =>
-            p.id === tabelaPrecoId &&
-            p.produto_id === produtoId &&
-            String(p.variacao_id) === String(variacaoId) // Garante que a comparação seja consistente
-        );
+        // A variação não é usada, pois o modelo de dados atual do backend não a suporta nos preços.
+        if (!precosDisponiveis || precosDisponiveis.length === 0 || !tabelaPrecoId) {
+            return 0;
+        }
+
+        // A busca agora se concentra apenas em encontrar a tabela de preço correta,
+        // pois a lista `precosDisponiveis` já pertence ao produto selecionado.
+        // 'tabelaPrecoId' aqui é o nome da tabela (ex: "Varejo"), que o backend define como 'id'.
+        const precoEncontrado = precosDisponiveis.find(p => p.id === tabelaPrecoId);
+
         return precoEncontrado ? parseFloat(precoEncontrado.valor) : 0;
     };
 
@@ -125,7 +128,7 @@ export default function CampoItens({
             desconto_item: 0, // Pode ser adicionado um campo para isso se necessário
             total_com_desconto: subtotal, // Por enquanto, é igual ao subtotal
         };
-        
+
         setItens(prev => {
             let novosItens = [...prev];
 

@@ -340,9 +340,20 @@ def listar_tabela_precos(produto_id: int):
         if not resultado or not resultado["tabela_precos"]:
             return []
 
-        tabelas_precos = json.loads(resultado["tabela_precos"])
-        return [{"id": nome, "nome": nome, "valor": valor} for nome, valor in tabelas_precos.items()]
-    
+        try:
+            tabelas_precos = json.loads(resultado["tabela_precos"])
+            response_data = []
+            for nome, valor in tabelas_precos.items():
+                # Garante que apenas tabelas com um valor numérico simples sejam enviadas
+                if isinstance(valor, (int, float, decimal.Decimal)):
+                    response_data.append({"id": nome, "nome": nome, "valor": float(valor)})
+            return response_data
+        except (json.JSONDecodeError, TypeError):
+            # Captura erros se o JSON for inválido ou a estrutura for inesperada
+            raise HTTPException(status_code=500, detail="Estrutura de dados da tabela de preços é inválida.")
+
+    except mysql.connector.Error as err:
+        raise HTTPException(status_code=500, detail=f"Erro de banco de dados: {err}")
     finally:
         cursor.close()
         conn.close()

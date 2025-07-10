@@ -315,7 +315,7 @@ export default function Listacontas({ filtro }) {
         if (acaoPendente === 'editar') {
             setMostrarConfirmacao(false);
             setAcaoPendente(null);
-            navigate('/contas/editar', { state: { conta: contaSelecionado } });
+            navigate('/financeiro/editar', { state: { conta: contaSelecionado } });
             return;
         }
     };

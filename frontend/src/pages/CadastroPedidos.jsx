@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
-import { useAuth } from "@/context/AuthContext"; // Removendo a pasta 'Auth' extra
+import { useAuth } from "@/context/AuthContext";
 import axios from "axios";
 
 import CampoDropdownEditavel from "@/components/campos/CampoDropdownEditavel";
@@ -15,85 +15,112 @@ import CampoPagamento from "@/components/campos/CampoPagamento";
 import CampoTextlong from "@/components/campos/CampoTextlong";
 import CampoImportarOrcamento from "@/components/campos/CampoImportarOrcamento";
 
-// Define a URL da API a partir das variáveis de ambiente do Vite
 const API_URL = import.meta.env.VITE_API_BASE_URL;
 
-export default function CadastroOrcamento({ modo = "novo" }) {
+export default function CadastroPedido({ modo = "novo" }) {
     const navigate = useNavigate();
     const location = useLocation();
     const { usuario } = useAuth();
 
     const [erro, setErro] = useState("");
     const [abaAtual, setAbaAtual] = useState("dados_iniciais");
-    const [variacoesDisponiveis, setVariacoesDisponiveis] = useState([]);
-    const [quantidadesDisponiveis, setQuantidadesDisponiveis] = useState([]);
     const [precosDisponiveis, setPrecosDisponiveis] = useState([]);
     const [itens, setItens] = useState([]);
-    const [form, setForm] = useState({});
+    const [form, setForm] = useState({
+        data_emissao: '',
+        data_validade: '',
+        cliente: '',
+        cliente_nome: '',
+        vendedor: '',
+        vendedor_nome: '',
+        origem_venda: '',
+        tipo_frete: '',
+        transportadora: '',
+        transportadora_nome: '',
+        valor_frete: 0,
+        total: 0,
+        desconto_total: 0,
+        total_com_desconto: 0,
+        lista_itens: [],
+        formas_pagamento: [],
+        observacao: '',
+        situacao_pedido: "Aguardando Aprovação",
+        importar_orcamento: '',
+        produto_selecionado: null,
+    });
 
     useEffect(() => {
         if (modo === "editar" && location.state?.pedido) {
             const pedido = location.state.pedido;
-
+            const parsedItens = JSON.parse(pedido.lista_itens || "[]");
+            setItens(parsedItens);
             setForm({
                 ...pedido,
-                // Garantir que IDs sejam numéricos se vierem como string, e usar `_id` para compatibilidade
                 cliente: Number(pedido.cliente_id) || '',
                 vendedor: Number(pedido.vendedor_id) || '',
                 transportadora: Number(pedido.transportadora_id) || '',
-                lista_itens: JSON.parse(pedido.lista_itens || "[]"),
+                lista_itens: parsedItens,
                 formas_pagamento: JSON.parse(pedido.formas_pagamento || "[]")
-            });
-
-            setItens(JSON.parse(pedido.lista_itens || "[]"));
-        } else if (modo === "novo") {
-            // Inicializar form para modo "novo" para evitar undefineds iniciais
-            setForm({
-                data_emissao: '',
-                data_validade: '',
-                cliente: '',
-                cliente_nome: '',
-                vendedor: '',
-                vendedor_nome: '',
-                origem_venda: '',
-                tipo_frete: '',
-                transportadora: '',
-                transportadora_nome: '',
-                valor_frete: 0.00,
-                total: 0.00,
-                desconto_total: 0.00,
-                total_com_desconto: 0.00,
-                lista_itens: [],
-                formas_pagamento: [],
-                observacao: '',
-                situacao_pedido: "Aguardando Aprovação", // Padrão para novo pedido
-                importar_orcamento: '', // Limpa ao iniciar um novo pedido
             });
         }
     }, [modo, location]);
 
+    useEffect(() => {
+        if (itens.length === 0) return;
+        const fetchPrecosParaItensExistentes = async () => {
+            const precosCarregados = new Set(precosDisponiveis.map(p => p.produto_id));
+            const produtoIdsParaBuscar = [...new Set(itens.map(item => item.produto_id).filter(id => id && !precosCarregados.has(id)))];
+            if (produtoIdsParaBuscar.length === 0) return;
+            try {
+                const promessas = produtoIdsParaBuscar.map(id => axios.get(`${API_URL}/tabela_precos_por_produto?produto_id=${id}`));
+                const respostas = await Promise.all(promessas);
+                const novosPrecos = respostas.flatMap(res => res.data || []);
+                setPrecosDisponiveis(prev => {
+                    const precosAtuais = new Map(prev.map(p => [`${p.produto_id}-${p.id}`, p]));
+                    novosPrecos.forEach(p => precosAtuais.set(`${p.produto_id}-${p.id}`, p));
+                    return Array.from(precosAtuais.values());
+                });
+            } catch (error) {
+                toast.error("Erro ao carregar os preços dos itens existentes.");
+            }
+        };
+        fetchPrecosParaItensExistentes();
+    }, [itens]);
 
-    const abas = [
-        { id: "dados_iniciais", label: "Dados Iniciais" },
-        { id: "itens", label: "Itens" },
-        { id: "dados_frete", label: "Dados do Frete" },
-        { id: "condicoes_pagamento", label: "Condições de Pagamento" },
-        { id: "dados_adicionais", label: "Dados Adicionais" },
-    ];
+    useEffect(() => {
+        const produtoId = form.produto_selecionado;
+        if (!produtoId) return;
+        const precoJaExiste = precosDisponiveis.some(p => p.produto_id === produtoId);
+        if (precoJaExiste) return;
+        const fetchPrecoDoProduto = async () => {
+            try {
+                const res = await axios.get(`${API_URL}/tabela_precos_por_produto?produto_id=${produtoId}`);
+                const novosPrecos = res.data || [];
+                setPrecosDisponiveis(prev => {
+                    const precosAtuais = new Map(prev.map(p => [`${p.produto_id}-${p.id}`, p]));
+                    novosPrecos.forEach(p => precosAtuais.set(`${p.produto_id}-${p.id}`, p));
+                    return Array.from(precosAtuais.values());
+                });
+            } catch (error) {
+                toast.error(`Erro ao carregar a tabela de preços do produto selecionado.`);
+            }
+        };
+        fetchPrecoDoProduto();
+    }, [form.produto_selecionado]);
+    
+    useEffect(() => {
+        const totalItens = itens.reduce((acc, item) => acc + (Number(item.total_com_desconto) || 0), 0);
+        setForm(prevForm => ({ ...prevForm, total: totalItens }));
+    }, [itens]);
 
     const handleChange = (e) => {
-        const { name, value, label, formatado } = e.target;
+        const { name, value, label } = e.target;
         setForm((prev) => {
-            const novoForm = { ...prev, [name]: formatado !== undefined ? value : value };
+            const novoForm = { ...prev, [name]: value };
             if (label !== undefined) {
-                if (name === "produto_selecionado") novoForm.produto_selecionado_nome = label;
-                if (name === "variacao_selecionada") novoForm.variacao_selecionada_nome = label;
-                if (name === "tabela_preco_selecionada") novoForm.tabela_preco_selecionada_nome = label;
                 if (name === "cliente") novoForm.cliente_nome = label;
                 if (name === "vendedor") novoForm.vendedor_nome = label;
                 if (name === "transportadora") novoForm.transportadora_nome = label;
-                // Se importar_orcamento é selecionado, o 'label' é o ID do orçamento importado.
-                // Não há um 'nome' associado diretamente aqui, então não criamos `importar_orcamento_nome`.
             }
             return novoForm;
         });
@@ -101,17 +128,11 @@ export default function CadastroOrcamento({ modo = "novo" }) {
 
     const validarFormulario = () => {
         const erros = [];
-        if (!form.data_emissao) erros.push("Data de emissão é obrigatória.");
-        if (!form.data_validade) erros.push("Data de validade é obrigatória.");
-        if (!form.cliente || form.cliente === 0) erros.push("Cliente é obrigatório.");
-        if (!form.cliente_nome) erros.push("Nome do cliente é obrigatório.");
-        if (!form.vendedor || form.vendedor === 0) erros.push("Vendedor é obrigatório.");
-        if (!form.vendedor_nome) erros.push("Nome do vendedor é obrigatório.");
-        if (!form.origem_venda) erros.push("Origem da venda é obrigatória.");
-        if (!form.tipo_frete) erros.push("Tipo de frete é obrigatório.");
-        if (!form.transportadora || form.transportadora === 0) erros.push("Transportadora é obrigatória.");
+        if (!form.cliente) erros.push("Cliente é obrigatório.");
+        if (!form.vendedor) erros.push("Vendedor é obrigatório.");
+        if (form.tipo_frete && form.tipo_frete !== 'Sem Frete' && !form.transportadora) erros.push("Transportadora é obrigatória.");
         if (!itens || itens.length === 0) erros.push("Adicione pelo menos um item ao pedido.");
-        if (!form.formas_pagamento || form.formas_pagamento.length === 0) erros.push("Informe as condições de pagamento.");
+        // Adicione outras validações se necessário
         return erros;
     };
 
@@ -123,35 +144,18 @@ export default function CadastroOrcamento({ modo = "novo" }) {
             return;
         }
 
-        // Calcular total e total_com_desconto com base nos itens e frete
-        const totalItens = itens.reduce((acc, item) => acc + (Number(item.total_com_desconto) || 0), 0);
-        const valorFrete = Number(form.valor_frete || 0);
-        const descontoTotal = Number(form.desconto_total || 0);
-        
-        const totalGeral = totalItens + valorFrete;
-        const totalComDescontoFinal = totalGeral - descontoTotal;
-
-
-        const payload = {
-            data_emissao: form.data_emissao,
-            data_validade: form.data_validade,
-            cliente: form.cliente,
-            cliente_nome: form.cliente_nome,
-            vendedor: form.vendedor,
-            vendedor_nome: form.vendedor_nome,
-            origem_venda: form.origem_venda,
-            tipo_frete: form.tipo_frete,
-            transportadora: form.transportadora,
-            transportadora_nome: form.transportadora_nome,
-            valor_frete: valorFrete,
-            total: totalItens, // Total dos itens (antes do frete e desconto global)
-            desconto_total: descontoTotal, // Desconto global
-            total_com_desconto: totalComDescontoFinal, // Total final após todos os cálculos
+        // Cria o payload e renomeia as chaves para corresponder ao backend.
+        const payload = { 
+            ...form, 
             lista_itens: itens,
-            formas_pagamento: form.formas_pagamento,
-            observacao: form.observacao || "",
-            situacao_pedido: form.situacao_pedido || "Aguardando Aprovação",
+            cliente_id: form.cliente,
+            vendedor_id: form.vendedor,
+            transportadora_id: form.transportadora
         };
+        
+        delete payload.cliente;
+        delete payload.vendedor;
+        delete payload.transportadora;
 
         try {
             if (modo === "editar" && form.id) {
@@ -163,81 +167,57 @@ export default function CadastroOrcamento({ modo = "novo" }) {
             }
             navigate("/pedidos");
         } catch (err) {
-            console.error("Erro ao salvar pedido:", err);
-            setErro(err?.response?.data?.detail || "Erro ao salvar pedido");
+            const errorMsg = err?.response?.data?.detail || "Erro ao salvar o pedido.";
+            console.error("Erro do Backend:", err.response.data); 
+            setErro(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg));
+            toast.error("Falha ao salvar. Verifique os erros.");
         }
     };
 
-    useEffect(() => {
-        if (form.produto_selecionado) {
-            axios.get(`${API_URL}/variacoes_por_produto?produto_id=${form.produto_selecionado}`)
-                .then(res => setVariacoesDisponiveis(res.data))
-                .catch(() => setVariacoesDisponiveis([]));
-
-            axios.get(`${API_URL}/quantidades_por_produto?produto_id=${form.produto_selecionado}`)
-                .then(res => setQuantidadesDisponiveis(res.data))
-                .catch(() => setQuantidadesDisponiveis([]));
-        } else {
-            setVariacoesDisponiveis([]);
-            setQuantidadesDisponiveis([]);
-        }
-    }, [form.produto_selecionado]);
-
-    useEffect(() => {
-        if (form.produto_selecionado) {
-            axios.get(`${API_URL}/tabela_precos_por_produto?produto_id=${form.produto_selecionado}`)
-                .then(res => setPrecosDisponiveis(res.data))
-                .catch(() => toast.error("Erro ao carregar tabela de preços"));
-        } else {
-            setPrecosDisponiveis([]);
-        }
-    }, [form.produto_selecionado]);
+    const abas = [
+        { id: "dados_iniciais", label: "Dados Iniciais" },
+        { id: "itens", label: "Itens" },
+        { id: "dados_frete", label: "Dados do Frete" },
+        { id: "condicoes_pagamento", label: "Condições de Pagamento" },
+        { id: "dados_adicionais", label: "Dados Adicionais" },
+    ];
 
     const renderCampos = () => {
         switch (abaAtual) {
             case "dados_iniciais":
                 return (
                     <>
-                        {/* Campo para importar orçamento */}
                         <CampoImportarOrcamento
+                            label="Importar de um Orçamento"
                             value={form.importar_orcamento || ""}
                             onChange={(e) => {
                                 const orc = e.target.orcamento;
+                                if (!orc) return;
 
-                                // Garante que formas_pagamento e lista_itens são arrays, mesmo que estejam como string
-                                const formasPagto = typeof orc.formas_pagamento === "string"
-                                    ? JSON.parse(orc.formas_pagamento || "[]")
-                                    : orc.formas_pagamento || [];
-
-                                const listaItens = typeof orc.lista_itens === "string"
-                                    ? JSON.parse(orc.lista_itens || "[]")
-                                    : orc.lista_itens || [];
-
+                                const listaItens = typeof orc.lista_itens === "string" ? JSON.parse(orc.lista_itens || "[]") : orc.lista_itens || [];
+                                
                                 setForm(prev => ({
                                     ...prev,
-                                    importar_orcamento: orc.id, // ID do orçamento importado
+                                    importar_orcamento: orc.id,
                                     cliente: orc.cliente_id,
                                     cliente_nome: orc.cliente_nome,
                                     vendedor: orc.vendedor_id,
                                     vendedor_nome: orc.vendedor_nome,
                                     origem_venda: orc.origem_venda,
-                                    data_emissao: orc.data_emissao,
-                                    data_validade: orc.data_validade,
                                     tipo_frete: orc.tipo_frete,
                                     transportadora: orc.transportadora_id,
                                     transportadora_nome: orc.transportadora_nome,
                                     valor_frete: orc.valor_frete,
                                     observacao: orc.observacao,
-                                    formas_pagamento: formasPagto,
+                                    formas_pagamento: typeof orc.formas_pagamento === "string" ? JSON.parse(orc.formas_pagamento || "[]") : orc.formas_pagamento || [],
                                     desconto_total: orc.desconto_total,
                                     total_com_desconto: orc.total_com_desconto,
-                                    // situacao_pedido: "Aguardando Aprovação", // Mantenha padrão para pedido
                                 }));
-
+                                
                                 setItens(listaItens);
                             }}
                             colSpan
-                            API_URL={API_URL} // Passa API_URL para CampoImportarOrcamento
+                            API_URL={API_URL}
                         />
                         <CampoData label="Data de Emissão" name="data_emissao" value={form.data_emissao || ""} onChange={handleChange} hoje obrigatorio />
                         <CampoData label="Data de Validade" name="data_validade" value={form.data_validade || ""} onChange={handleChange} hojeMaisDias={7} obrigatorio />
@@ -248,26 +228,17 @@ export default function CadastroOrcamento({ modo = "novo" }) {
                     </>
                 );
             case "itens":
-                return <CampoItens
-                    form={form}
-                    setForm={setForm}
-                    itens={itens}
-                    setItens={setItens}
-                    precosDisponiveis={precosDisponiveis}
-                    variacoesDisponiveis={variacoesDisponiveis}
-                    API_URL={API_URL} // Passa API_URL para CampoItens
-                />;
-
+                return <CampoItens form={form} setForm={setForm} itens={itens} setItens={setItens} precosDisponiveis={precosDisponiveis} API_URL={API_URL} />;
             case "dados_frete":
-                return (
+                 return (
                     <>
                         <CampoDropdownEditavel label="Tipo de Frete" name="tipo_frete" value={form.tipo_frete || ""} onChange={handleChange} tipo="tipo_frete" usuario={usuario} obrigatorio />
-                        <CampoDropdownDb label="Transportadora" name="transportadora" value={form.transportadora || ""} onChange={handleChange} url={`${API_URL}/cadastros_dropdown`} filtro={{ tipo_cadastro: ["Transportadora"] }} campoValor="id" campoLabel="nome_razao" obrigatorio />
-                        <CampoValorMonetario label="Valor do Frete" name="valor_frete" value={form.valor_frete || 0.00} onChange={handleChange} placeholder="0,00" />
+                        <CampoDropdownDb label="Transportadora" name="transportadora" value={form.transportadora || ""} onChange={handleChange} url={`${API_URL}/cadastros_dropdown`} filtro={{ tipo_cadastro: ["Transportadora"] }} campoValor="id" campoLabel="nome_razao" obrigatorio={form.tipo_frete !== 'Sem Frete'} disabled={form.tipo_frete === 'Sem Frete'} />
+                        <CampoValorMonetario label="Valor do Frete" name="valor_frete" value={form.valor_frete || 0} onChange={handleChange} placeholder="0,00" />
                     </>
                 );
             case "condicoes_pagamento":
-                return <CampoPagamento form={form} setForm={setForm} handleChange={handleChange} API_URL={API_URL} />; // Passa API_URL para CampoPagamento
+                return <CampoPagamento form={form} setForm={setForm} handleChange={handleChange} />;
             case "dados_adicionais":
                 return <CampoTextlong label="Observações" name="observacao" value={form.observacao || ""} onChange={handleChange} placeholder="Descreva os detalhes do Pedido" colSpan />;
             default:
@@ -278,7 +249,7 @@ export default function CadastroOrcamento({ modo = "novo" }) {
     return (
         <div className="max-w-6xl mx-auto p-6 pb-28">
             <h1 className="text-3xl font-bold mb-6">
-                {modo === "editar" ? `Editar Pedido: ${form.id || ''}` : "Novo Pedido"}
+                {modo === "editar" ? `Editar Pedido: #${form.id || ''}` : "Novo Pedido"}
             </h1>
             <div className="flex gap-2 border-b mb-6 overflow-x-auto">
                 {abas.map((aba) => (
@@ -294,12 +265,12 @@ export default function CadastroOrcamento({ modo = "novo" }) {
             <form id="form-pedido" onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {renderCampos()}
             </form>
-            <div className="col-span-2 flex justify-end gap-4 mt-6 mb-12">
+            <div className="flex justify-end gap-4 mt-6">
                 <button type="button" onClick={() => navigate(-1)} className="px-5 py-2 bg-gray-300 hover:bg-gray-400 text-gray-800 rounded font-medium">
                     Voltar
                 </button>
-                <ButtonComPermissao permissoes={["admin"]} type="submit" form="form-pedido" className="px-6 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded font-semibold">
-                    Salvar
+                <ButtonComPermissao permissoes={["admin", "editor"]} type="submit" form="form-pedido" className="px-6 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded font-semibold">
+                    {modo === 'editar' ? 'Salvar Alterações' : 'Criar Pedido'}
                 </ButtonComPermissao>
             </div>
             <ModalErro mensagem={erro} onClose={() => setErro("")} />

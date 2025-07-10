@@ -24,6 +24,7 @@ import FaturarPedido from "./pages/FaturarPedido"
 import ExpedirPedido from "./pages/ExpedirPedido"
 import CadastroContas from "./pages/CadastroContas"
 import ListarContas from "./pages/ListarContas"
+import ConsultaNFE from "./pages/ConsultaNFE"
 
 function App() {
   return (
@@ -52,8 +53,10 @@ function App() {
             <Route path="/pedidos/faturamento" element={<PrivateRoute><FaturarPedido/></PrivateRoute>} />
             <Route path="/pedidos/expedicao" element={<PrivateRoute><ExpedirPedido/></PrivateRoute>} />
             <Route path="/financeiro/criar" element={<PrivateRoute><CadastroContas/></PrivateRoute>} />
+            <Route path="/financeiro/editar" element={<PrivateRoute><CadastroContas modo="editar"/></PrivateRoute>} />
             <Route path="/financeiro/receber" element={<PrivateRoute><ListarContas filtro="receber" /></PrivateRoute>} />
             <Route path="/financeiro/pagar" element={<PrivateRoute><ListarContas filtro="pagar" /></PrivateRoute>} />
+            <Route path="/notas" element={<PrivateRoute><ConsultaNFE/></PrivateRoute>} />
           </Route>
         </Routes>
 
