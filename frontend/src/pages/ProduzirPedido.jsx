@@ -9,7 +9,6 @@ import ModalFiltroColunas from '@/components/modals/ModalFiltroColunas'
 import ButtonComPermissao from "@/components/buttons/ButtonComPermissao";
 import ModalEditarTabela from '@/components/modals/ModalEditarTabela'
 import ModalVisualizarPedido from '@/components/modals/ModalVisualizarPedido'
-import ModalProgramacaoPedido from '@/components/modals/ModalProgramacaoPedido' // Importa o modal de programação
 
 
 import { useAuth } from '@/context/AuthContext'
@@ -55,9 +54,6 @@ export default function Listapedidos() {
     // Visualizar
     const [mostrarModalVisualizar, setMostrarModalVisualizar] = useState(false)
 
-    // Programação/Produção
-    const [mostrarModalProgramar, setMostrarModalProgramar] = useState(false)
-
 
     // Buscar pedidos ao montar
     const buscarpedidos = async () => {
@@ -66,7 +62,7 @@ export default function Listapedidos() {
         try {
             const filtrosStr = [
                 ...filtrosSelecionados.map(f => `${f.coluna}:${f.texto}`),
-                `situacao_pedido:Programação` // Filtro fixo para pedidos em Programação
+                `situacao_pedido:Produção` // Filtro fixo para pedidos em Produção
             ].filter(Boolean).join(';'); // Garante que elementos nulos/vazios sejam removidos
 
             const params = {
@@ -176,6 +172,8 @@ export default function Listapedidos() {
     ]);
 
 
+
+
     useEffect(() => {
         if (colunasVisiveis.length > 0) {
             // Se a coluna atual não estiver mais visível, atualiza
@@ -191,7 +189,7 @@ export default function Listapedidos() {
             const filtrosStr = [
                 ...filtrosSelecionados.map(f => `${f.coluna}:${f.texto}`),
                 filtroRapidoTexto.trim() ? `${filtroRapidoColuna}:${filtroRapidoTexto}` : null,
-                `situacao_pedido:Programação` // Filtro fixo para exportação de pedidos em Programação
+                `situacao_pedido:Produção` // Filtro fixo para exportação de pedidos em Produção
             ].filter(Boolean).join(';');
 
             const params = {
@@ -271,7 +269,7 @@ export default function Listapedidos() {
         }
     }, [filtroRapidoColuna])
 
-    const atualizarPedido = async (alteracoes = {}) => {
+    const atualizarSituacaoPedido = async (novaSituacao) => {
         if (!pedidoSelecionado) return;
 
         try {
@@ -293,7 +291,7 @@ export default function Listapedidos() {
             }
 
             const payload = {
-                // dados fixos do pedido
+                situacao_pedido: novaSituacao,
                 data_emissao: pedidoCompleto.data_emissao,
                 data_validade: pedidoCompleto.data_validade,
                 cliente: pedidoCompleto.cliente_id,
@@ -310,23 +308,18 @@ export default function Listapedidos() {
                 total_com_desconto: pedidoCompleto.total_com_desconto,
                 lista_itens: JSON.parse(pedidoCompleto.lista_itens || "[]"),
                 formas_pagamento: JSON.parse(pedidoCompleto.formas_pagamento || "[]"),
-                observacao: pedidoCompleto.observacao || "",
-                data_finalizacao: pedidoCompleto.data_finalizacao,
-                ordem_finalizacao: pedidoCompleto.ordem_finalizacao,
-
-                // sobrescreve com alterações fornecidas
-                ...alteracoes
+                observacao: pedidoCompleto.observacao || ""
             };
 
             // USO DA VARIÁVEL DE AMBIENTE AQUI
             await axios.put(`${API_URL}/pedidos/${pedidoSelecionado.id}`, payload);
 
-            toast.success("Pedido atualizado com sucesso!");
+            toast.success(`Pedido ${novaSituacao.toLowerCase()} com sucesso!`);
             setpedidoSelecionado(null);
             buscarpedidos();
         } catch (error) {
-            console.error("Erro ao atualizar pedido:", error);
-            toast.error("Erro ao atualizar o pedido.");
+            console.error("Erro ao atualizar situação:", error);
+            toast.error("Erro ao atualizar a situação do pedido.");
         }
     };
 
@@ -482,19 +475,16 @@ export default function Listapedidos() {
                         </button>
 
 
-                        {/* Botão Programar */}
+                        {/* Botão Finalizar */}
                         <button
                             onClick={async () => {
                                 if (!pedidoSelecionado) return exibirAviso("Selecione um pedido primeiro!")
-                                if (pedidoSelecionado.situacao_pedido !== "Programação") { // Apenas permite programar se a situação for "Programação"
-                                  return exibirAviso("Somente pedidos em 'Programação' podem ser programados.");
-                                }
-                                setMostrarModalProgramar(true); // Abre o modal de programação
+                                await atualizarSituacaoPedido("Embalagem")
                             }}
                             className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded flex items-center gap-2"
                         >
                             <FaCheckCircle />
-                            Programar Pedido
+                            Enviar para Embalagem
                         </button>
 
                     </div>
@@ -601,7 +591,7 @@ export default function Listapedidos() {
                             return atual
                         })
                     }}
-                    API_URL={API_URL} // Passa API_URL para ModalFiltroColunas
+                    API_URL={API_URL} // Passa API_URL para o ModalFiltroColunas
                 />
             )}
 
@@ -626,30 +616,6 @@ export default function Listapedidos() {
                 <ModalVisualizarPedido
                     pedido={pedidoSelecionado}
                     onClose={() => setMostrarModalVisualizar(false)}
-                />
-            )}
-
-            {mostrarModalProgramar && (
-                <ModalProgramacaoPedido
-                    pedido={pedidoSelecionado} // Passa o pedido selecionado para o modal
-                    usuario={usuario}
-                    onClose={() => setMostrarModalProgramar(false)}
-                    onErro={(msg) => exibirAviso(msg)}
-                    onConfirmar={async (dadosProgramacao) => {
-                        try {
-                            // Ao confirmar, atualiza o pedido com os dados de programação e muda a situação para 'Produção'
-                            const alteracoesComSituacao = { 
-                                ...dadosProgramacao,
-                                situacao_pedido: "Produção" 
-                            };
-                            await atualizarPedido(alteracoesComSituacao);
-                            toast.success("Pedido programado e enviado para Produção!");
-                            setMostrarModalProgramar(false); // Fecha o modal
-                        } catch (err) {
-                            exibirAviso("Erro ao programar pedido.");
-                        }
-                    }}
-                    API_URL={API_URL} // Passa API_URL para o ModalProgramacaoPedido
                 />
             )}
         </div>

@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useAuth } from '@/context/AuthContext';
 import axios from 'axios';
+import { Search } from 'lucide-react';
 
 import CampoDropdownEditavel from '@/components/campos/CampoDropdownEditavel';
 import CampoTextsimples from '@/components/campos/CampoTextsimples';
@@ -25,7 +26,7 @@ export default function CadastroGeral({ modo = 'novo' }) {
         nome_razao: '',
         fantasia: '',
         cpf_cnpj: '',
-        ie: '', // ATUALIZADO: de 'ie' para 'ie'
+        ie: '',
         email: '',
         ddi_celular: '+55',
         celular: '',
@@ -50,6 +51,7 @@ export default function CadastroGeral({ modo = 'novo' }) {
     const [abaAtual, setAbaAtual] = useState('geral');
     const [isCepLoading, setIsCepLoading] = useState(false);
     const [isCnpjLoading, setIsCnpjLoading] = useState(false);
+    const [isIeLoading, setIsIeLoading] = useState(false);
 
     useEffect(() => {
         const initialState = {
@@ -65,9 +67,9 @@ export default function CadastroGeral({ modo = 'novo' }) {
             const dadosEdicaoFormatado = {
                 ...initialState,
                 ...cadastroEdicao,
-                ie: cadastroEdicao.ie || '', // Garante que 'ie' substitua 'ie'
+                ie: cadastroEdicao.ie || '',
                 cep: (cadastroEdicao.cep || '').replace(/\D/g, ''),
-                indicador_ie: cadastroEdicao.indicador_ie || '9',
+                indicador_ie: String(cadastroEdicao.indicador_ie || '9'),
             };
             setForm(dadosEdicaoFormatado);
         } else {
@@ -87,8 +89,8 @@ export default function CadastroGeral({ modo = 'novo' }) {
         return Object.entries(regioes).find(([, estados]) => estados.includes(uf.toUpperCase()))?.[0] || '';
     };
 
-    const buscarEnderecoViaCep = async (cep) => {
-        const cepLimpo = cep.replace(/\D/g, '');
+    const buscarEnderecoViaCep = useCallback(async (cep) => {
+        const cepLimpo = (cep || '').replace(/\D/g, '');
         if (cepLimpo.length !== 8 || isCepLoading) return;
 
         setIsCepLoading(true);
@@ -98,12 +100,12 @@ export default function CadastroGeral({ modo = 'novo' }) {
                 const uf = res.data.uf;
                 setForm((prev) => ({
                     ...prev,
-                    logradouro: res.data.logradouro || prev.logradouro,
-                    bairro: res.data.bairro || prev.bairro,
-                    cidade: res.data.localidade || prev.cidade,
-                    estado: uf || prev.estado,
-                    codigo_ibge_cidade: res.data.ibge || prev.codigo_ibge_cidade,
-                    regiao: obterRegiaoPorUF(uf) || prev.regiao,
+                    logradouro: res.data.logradouro || '',
+                    bairro: res.data.bairro || '',
+                    cidade: res.data.localidade || '',
+                    estado: uf || '',
+                    codigo_ibge_cidade: res.data.ibge || '',
+                    regiao: obterRegiaoPorUF(uf) || '',
                 }));
             } else {
                 toast.warn("CEP não encontrado ou inválido.");
@@ -113,34 +115,49 @@ export default function CadastroGeral({ modo = 'novo' }) {
         } finally {
             setIsCepLoading(false);
         }
-    };
+    }, [isCepLoading]);
 
-    const preencherDadosPorCNPJ = async (cnpj) => {
-        const cnpjLimpo = cnpj.replace(/\D/g, '');
+    const preencherDadosPorCNPJ = useCallback(async (cnpj) => {
+        const cnpjLimpo = (cnpj || '').replace(/\D/g, '');
         if (cnpjLimpo.length !== 14 || isCnpjLoading) return;
+
+        if (modo === 'editar' && cadastroEdicao?.cpf_cnpj === cnpjLimpo) {
+            return;
+        }
+
         setIsCnpjLoading(true);
         try {
-            const res = await axios.get(`${API_URL}/consulta/cnpj/${cnpjLimpo}`);
-            if (res.data) {
+            const res = await axios.get(`${API_URL}/api/consulta/cnpj/${cnpjLimpo}`);
+            if (res.data && res.data.status !== "ERROR") {
                 const data = res.data;
-                setForm((prev) => ({
-                    ...prev,
-                    nome_razao: data.razao_social || data.nome || prev.nome_razao,
-                    fantasia: data.nome_fantasia || data.fantasia || prev.fantasia,
-                    email: data.email || prev.email,
-                    cep: data.cep?.replace(/\D/g, '') || prev.cep,
-                    logradouro: data.logradouro || prev.logradouro,
-                    numero: data.numero?.split(/[\\/]/)[0]?.trim() || prev.numero,
-                    complemento: data.complemento || prev.complemento,
-                    bairro: data.bairro || prev.bairro,
-                    cidade: data.municipio || data.cidade || prev.cidade,
-                    estado: data.uf || data.estado || prev.estado,
-                    ie: data.inscricao_estadual || prev.ie || '', // ATUALIZADO
-                    indicador_ie: data.indicador_ie || prev.indicador_ie || '9',
-                    celular: ('55' + (data.telefone?.split('/')[0] || '').replace(/\D/g, '')) || prev.celular,
-                    telefone: ('55' + (data.telefone?.split('/')[1] || '').replace(/\D/g, '')) || prev.telefone,
-                    tipo_pessoa: 'Pessoa Jurídica',
-                }));
+
+                const telefonesAPI = data.telefone || '';
+                const todosOsDigitos = telefonesAPI.replace(/\D/g, '');
+                const numerosEncontrados = todosOsDigitos.match(/\d{10,11}/g) || [];
+
+                setForm((prev) => {
+                    // CORREÇÃO: Adicionado o '55' na frente dos números encontrados
+                    const celularFinal = numerosEncontrados.length > 0 ? `55${numerosEncontrados[0]}` : prev.celular;
+                    const telefoneFinal = numerosEncontrados.length > 1 ? `55${numerosEncontrados[1]}` : prev.telefone;
+
+                    return {
+                        ...prev,
+                        nome_razao: data.razao_social || data.nome || '',
+                        fantasia: data.nome_fantasia || data.fantasia || '',
+                        email: data.email || '',
+                        cep: data.cep?.replace(/\D/g, '') || '',
+                        logradouro: data.logradouro || '',
+                        numero: data.numero || '',
+                        complemento: data.complemento || '',
+                        bairro: data.bairro || '',
+                        cidade: data.municipio || '',
+                        estado: data.uf || '',
+                        tipo_pessoa: 'Pessoa Jurídica',
+                        // Atribui os telefones com o DDI do Brasil
+                        celular: celularFinal,
+                        telefone: telefoneFinal
+                    };
+                });
             } else {
                 toast.info("Nenhum dado encontrado para o CNPJ informado.");
             }
@@ -149,28 +166,61 @@ export default function CadastroGeral({ modo = 'novo' }) {
         } finally {
             setIsCnpjLoading(false);
         }
-    };
-    
+    }, [isCnpjLoading, modo, cadastroEdicao, API_URL]);
+
     useEffect(() => {
         const cepLimpo = form.cep?.replace(/\D/g, '') || '';
         if (cepLimpo.length === 8) {
-            buscarEnderecoViaCep(cepLimpo);
+            buscarEnderecoViaCep(form.cep);
         }
-    }, [form.cep]);
-
-    useEffect(() => {
-        const cnpjLimpo = form.cpf_cnpj?.replace(/\D/g, '') || '';
-        if (form.tipo_pessoa === 'Pessoa Jurídica' && cnpjLimpo.length === 14) {
-            if (modo === 'editar' && cadastroEdicao?.cpf_cnpj === cnpjLimpo) {
-                return;
-            }
-            preencherDadosPorCNPJ(cnpjLimpo);
-        }
-    }, [form.cpf_cnpj, form.tipo_pessoa]);
+    }, [form.cep, buscarEnderecoViaCep]);
 
     const handleChange = (e) => {
         const { name, value } = e.target;
         setForm((prev) => ({ ...prev, [name]: value }));
+
+        if (name === 'cpf_cnpj' && form.tipo_pessoa === 'Pessoa Jurídica') {
+            const cnpjLimpo = value.replace(/\D/g, '');
+            if (cnpjLimpo.length === 14) {
+                preencherDadosPorCNPJ(cnpjLimpo);
+            }
+        }
+    };
+
+    const handleVerificarIE = async () => {
+        const documento = form.cpf_cnpj?.replace(/\D/g, '');
+        const uf = form.estado;
+        const tipoPessoa = form.tipo_pessoa;
+
+        if (!documento || (tipoPessoa === 'Pessoa Física' && documento.length !== 11) || (tipoPessoa === 'Pessoa Jurídica' && documento.length !== 14)) {
+            toast.info(`Por favor, preencha um ${tipoPessoa === 'Pessoa Física' ? 'CPF' : 'CNPJ'} válido.`);
+            return;
+        }
+        if (!uf) {
+            toast.info('O campo "UF" (Estado) é necessário para a consulta de IE. Preencha o CEP primeiro.');
+            return;
+        }
+
+        setIsIeLoading(true);
+        toast.info(`Verificando IE para o documento no estado ${uf}...`);
+
+        try {
+            const res = await axios.get(`${API_URL}/api/consulta/ie?documento=${documento}&uf=${uf}`);
+            const { situacao_cadastral, inscricao_estadual } = res.data;
+
+            if (situacao_cadastral === 'Habilitado') {
+                toast.success('Inscrição Estadual encontrada e habilitada!');
+                setForm(prev => ({ ...prev, indicador_ie: '1', ie: inscricao_estadual }));
+            } else {
+                toast.warn('A consulta automática não retornou uma IE ativa. Se souber que existe, preencha os dados manualmente.');
+            }
+        } catch (error) {
+            const errorMsg = error.response?.data?.detail || 'Falha na consulta automática.';
+            toast.error(errorMsg);
+            toast.info("Por favor, verifique e preencha a Inscrição Estadual manualmente, se aplicável.");
+        } finally {
+            setIsIeLoading(false);
+        }
     };
 
     const validarCampos = () => {
@@ -182,10 +232,10 @@ export default function CadastroGeral({ modo = 'novo' }) {
             const cnpj = (form.cpf_cnpj || '').replace(/\D/g, '');
             if (cnpj.length !== 14) return 'CNPJ inválido.';
         }
-        if (!form.indicador_ie || !['1', '2', '9'].includes(form.indicador_ie)) {
+        if (!form.indicador_ie || !['1', '2', '9'].includes(String(form.indicador_ie))) {
             return 'Indicador de Inscrição Estadual é obrigatório.';
         }
-        if (form.indicador_ie === '1' && !form.ie.trim()) {
+        if (String(form.indicador_ie) === '1' && !form.ie.trim()) {
             return 'Inscrição Estadual é obrigatória para Contribuinte de ICMS.';
         }
         return '';
@@ -196,7 +246,7 @@ export default function CadastroGeral({ modo = 'novo' }) {
         if (form.tipo_pessoa !== 'Pessoa Jurídica') {
             dados.fantasia = '';
         }
-        if (dados.indicador_ie !== '1') {
+        if (String(dados.indicador_ie) !== '1') {
             dados.ie = '';
         }
         dados.cpf_cnpj = (dados.cpf_cnpj || '').replace(/\D/g, '');
@@ -243,29 +293,17 @@ export default function CadastroGeral({ modo = 'novo' }) {
                     <>
                         <CampoDropdownEditavel label="Tipo de Cadastro" name="tipo_cadastro" value={form.tipo_cadastro} onChange={handleChange} tipo="tipo_cadastro" usuario={usuario} obrigatorio />
                         <CampoDropdownEditavel
-                            label="Tipo de Pessoa"
-                            name="tipo_pessoa"
-                            value={form.tipo_pessoa}
+                            label="Tipo de Pessoa" name="tipo_pessoa" value={form.tipo_pessoa}
                             onChange={(e) => {
                                 setForm(prev => ({
-                                    ...prev,
-                                    tipo_pessoa: e.target.value,
-                                    fantasia: e.target.value === 'Pessoa Física' ? '' : prev.fantasia,
-                                    cpf_cnpj: '',
-                                    ie: '',
-                                    indicador_ie: '9',
+                                    ...prev, tipo_pessoa: e.target.value, fantasia: e.target.value === 'Pessoa Física' ? '' : prev.fantasia,
+                                    cpf_cnpj: '', ie: '', indicador_ie: '9',
                                 }));
                             }}
-                            tipo="tipo_pessoa"
-                            usuario={usuario}
-                            obrigatorio
+                            tipo="tipo_pessoa" usuario={usuario} obrigatorio
                         />
                         <CampoNumsimples
-                            label={form.tipo_pessoa === 'Pessoa Física' ? 'CPF' : 'CNPJ'}
-                            name="cpf_cnpj"
-                            value={form.cpf_cnpj}
-                            onChange={handleChange}
-                            obrigatorio
+                            label={form.tipo_pessoa === 'Pessoa Física' ? 'CPF' : 'CNPJ'} name="cpf_cnpj" value={form.cpf_cnpj} onChange={handleChange} obrigatorio
                             placeholder={form.tipo_pessoa === 'Pessoa Física' ? '000.000.000-00' : '00.000.000/0000-00'}
                             formatos={[
                                 form.tipo_pessoa === 'Pessoa Física'
@@ -278,43 +316,47 @@ export default function CadastroGeral({ modo = 'novo' }) {
                         {form.tipo_pessoa === 'Pessoa Jurídica' && (
                             <CampoTextsimples label="Nome Fantasia" name="fantasia" value={form.fantasia} onChange={handleChange} placeholder="Nome fantasia da empresa" />
                         )}
-                        
-                        {/* LÓGICA UNIFICADA PARA IE */}
                         <CampoDropdownEditavel
-                            label="Indicador de Inscrição Estadual"
-                            name="indicador_ie"
-                            value={form.indicador_ie}
-                            onChange={handleChange}
-                            tipo="indicador_ie"
-                            usuario={usuario}
-                            obrigatorio
+                            label="Indicador de Inscrição Estadual" name="indicador_ie" value={String(form.indicador_ie)} onChange={handleChange}
+                            tipo="indicador_ie" usuario={usuario} obrigatorio
                         />
-                        {form.indicador_ie === '1' && (
-                            <CampoTextsimples
-                                label="Inscrição Estadual (IE)"
-                                name="ie" // Nome do campo atualizado
-                                value={form.ie}
-                                onChange={handleChange}
-                                placeholder="Número da Inscrição Estadual"
-                                obrigatorio={form.indicador_ie === '1'}
-                            />
+                        {String(form.indicador_ie) === '1' ? (
+                            <div>
+                                <label className="block mb-1 text-sm font-medium text-gray-700">Inscrição Estadual (IE)</label>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        name="ie" value={form.ie} onChange={handleChange} placeholder="Preencha ou verifique"
+                                        disabled={String(form.indicador_ie) !== '1'}
+                                        className="w-full border p-2 rounded flex-grow border-gray-300 disabled:bg-gray-100"
+                                    />
+                                    <button
+                                        type="button" onClick={handleVerificarIE}
+                                        disabled={isIeLoading || !form.cpf_cnpj || !form.estado}
+                                        title="Verificar Inscrição Estadual na SEFAZ"
+                                        className="h-10 px-3 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+                                    >
+                                        {isIeLoading ? (<span className="animate-spin h-5 w-5 border-2 border-b-transparent border-gray-700 rounded-full"></span>) : (<Search size={18} />)}
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <CampoTextsimples label="Inscrição Estadual (IE)" name="ie" value="Não aplicável" disabled={true} />
                         )}
-
                         <CampoDropdownEditavel label="Situação Cadastral" name="situacao" value={form.situacao} onChange={handleChange} tipo="situacao" usuario={usuario} />
                     </>
                 );
             case 'endereco':
                 return (
                     <>
-                        <CampoNumsimples label="CEP" name="cep" value={form.cep} onChange={handleChange} formatos={[{ tam: 8, regex: /(\d{5})(\d{3})/, mascara: '$1-$2' }]} />
-                        <CampoTextsimples label="Logradouro" name="logradouro" value={form.logradouro} onChange={handleChange} disabled={isCepLoading} />
-                        <CampoTextsimples label="Número" name="numero" value={form.numero} onChange={handleChange} />
-                        <CampoTextsimples label="Complemento" name="complemento" value={form.complemento} onChange={handleChange} />
-                        <CampoTextsimples label="Bairro" name="bairro" value={form.bairro} onChange={handleChange} disabled={isCepLoading} />
-                        <CampoTextsimples label="Cidade" name="cidade" value={form.cidade} onChange={handleChange} disabled />
-                        <CampoTextsimples label="UF" name="estado" value={form.estado} onChange={handleChange} disabled />
-                        <CampoTextsimples label="Cód. IBGE Cidade" name="codigo_ibge_cidade" value={form.codigo_ibge_cidade} onChange={() => { }} disabled />
-                        <CampoTextsimples label="País" name="pais" value={form.pais} onChange={() => { }} disabled />
+                        <CampoNumsimples label="CEP" name="cep" value={form.cep} onChange={handleChange} formatos={[{ tam: 8, regex: /(\d{5})(\d{3})/, mascara: '$1-$2' }]} placeholder="00000-000" />
+                        <CampoTextsimples label="Logradouro" name="logradouro" value={form.logradouro} onChange={handleChange} disabled={isCepLoading} placeholder="Ex: Rua das Flores" />
+                        <CampoTextsimples label="Número" name="numero" value={form.numero} onChange={handleChange} placeholder="Ex: 123" />
+                        <CampoTextsimples label="Complemento" name="complemento" value={form.complemento} onChange={handleChange} placeholder="Ex: Apto 101, Bloco B" />
+                        <CampoTextsimples label="Bairro" name="bairro" value={form.bairro} onChange={handleChange} disabled={isCepLoading} placeholder="Ex: Centro" />
+                        <CampoTextsimples label="Cidade" name="cidade" value={form.cidade} onChange={handleChange} disabled placeholder="Preenchido pelo CEP" />
+                        <CampoTextsimples label="UF" name="estado" value={form.estado} onChange={handleChange} disabled placeholder="Preenchido pelo CEP" />
+                        <CampoTextsimples label="Cód. IBGE Cidade" name="codigo_ibge_cidade" value={form.codigo_ibge_cidade} onChange={() => { }} disabled placeholder="Preenchido pelo CEP" />
+                        <CampoTextsimples label="País" name="pais" value={form.pais} onChange={() => { }} disabled placeholder="Preenchido pelo CEP" />
                     </>
                 );
             case 'contato':
@@ -335,28 +377,22 @@ export default function CadastroGeral({ modo = 'novo' }) {
             <h1 className="text-2xl sm:text-3xl font-bold mb-6 text-gray-800">
                 {modo === 'editar' ? `Editar Cadastro: ${form.nome_razao || ''}` : 'Novo Cadastro'}
             </h1>
-
             <div className="flex flex-wrap gap-1 border-b border-gray-300 mb-6">
                 {abas.map((aba) => (
                     <button
                         key={aba.id}
                         onClick={() => setAbaAtual(aba.id)}
                         className={`px-3 py-2 sm:px-4 sm:py-2.5 text-sm sm:text-base font-medium rounded-t-md transition-all duration-200 ease-in-out focus:outline-none
-                          ${abaAtual === aba.id
-                                ? 'bg-teal-600 text-white shadow-sm'
-                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-800'
-                            }`}
+                          ${abaAtual === aba.id ? 'bg-teal-600 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-800'}`}
                     >
                         {aba.label}
                     </button>
                 ))}
             </div>
-
-            <form id="form-principal" onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+            <form id="form-principal" onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                 {renderCampos()}
             </form>
-
-            <div className="col-span-1 md:col-span-2 flex flex-col sm:flex-row justify-end gap-3 mt-8 mb-12">
+            <div className="flex justify-end gap-3 mt-8 mb-12">
                 <button
                     type="button"
                     onClick={() => navigate(-1)}
@@ -373,7 +409,6 @@ export default function CadastroGeral({ modo = 'novo' }) {
                     {modo === 'editar' ? 'Salvar Alterações' : 'Criar Cadastro'}
                 </ButtonComPermissao>
             </div>
-
             <ModalErro mensagem={erro} onClose={() => setErro('')} />
         </div>
     );

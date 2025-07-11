@@ -3,7 +3,7 @@ import axios from 'axios';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line, PieChart, Pie, Cell, Legend
 } from 'recharts';
-import { TrendingUp, TrendingDown, DollarSign, Archive, UserCheck } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, UserCheck } from 'lucide-react'; // 'Archive' removido, pois não é mais necessário
 
 // Define a URL base da sua API a partir das variáveis de ambiente
 const API_URL = import.meta.env.VITE_API_BASE_URL;
@@ -16,7 +16,7 @@ export default function Dashboard() {
   const [faturamentoMensal, setFaturamentoMensal] = useState([]);
   const [vendasPorVendedor, setVendasPorVendedor] = useState([]);
   const [situacaoFinanceira, setSituacaoFinanceira] = useState([]);
-  const [topProdutosEstoque, setTopProdutosEstoque] = useState([]);
+  // REMOVIDO: const [topProdutosEstoque, setTopProdutosEstoque] = useState([]);
   const [indicadores, setIndicadores] = useState({ totalFaturado: 0, ticketMedio: 0, contasAPagar: 0, contasAReceber: 0 });
   
   const [loading, setLoading] = useState(true);
@@ -33,14 +33,13 @@ export default function Dashboard() {
           resFaturamento,
           resVendasVendedor,
           resFinanceiro,
-          resEstoque,
+          // REMOVIDO: resEstoque,
           resIndicadores
         ] = await Promise.all([
-          // Você precisará criar estes endpoints no seu backend
           axios.get(`${API_URL}/dashboard/faturamento-mensal`),
           axios.get(`${API_URL}/dashboard/vendas-por-vendedor`),
           axios.get(`${API_URL}/dashboard/situacao-financeira`),
-          axios.get(`${API_URL}/dashboard/top-produtos-estoque`),
+          // REMOVIDO: axios.get(`${API_URL}/dashboard/top-produtos-estoque`),
           axios.get(`${API_URL}/dashboard/indicadores-gerais`)
         ]);
 
@@ -48,7 +47,7 @@ export default function Dashboard() {
         setFaturamentoMensal(resFaturamento.data);
         setVendasPorVendedor(resVendasVendedor.data);
         setSituacaoFinanceira(resFinanceiro.data);
-        setTopProdutosEstoque(resEstoque.data);
+        // REMOVIDO: setTopProdutosEstoque(resEstoque.data);
         setIndicadores(resIndicadores.data);
 
       } catch (err) {
@@ -158,16 +157,16 @@ export default function Dashboard() {
               <YAxis dataKey="vendedor" type="category" tick={{ fill: '#6b7280', width: 60 }} />
               <Tooltip formatter={(valor) => [valor, 'Vendas']} />
               <Bar dataKey="totalVendas" fill="#0284c7" radius={[0, 4, 4, 0]}>
-                 {vendasPorVendedor.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={CORES_GRAFICOS[index % CORES_GRAFICOS.length]}/>
-                ))}
+                   {vendasPorVendedor.map((entry, index) => (
+                     <Cell key={`cell-${index}`} fill={CORES_GRAFICOS[index % CORES_GRAFICOS.length]}/>
+                   ))}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
         
-        {/* Gráfico de Estoque de Produtos */}
-        <div className="bg-white shadow rounded-lg p-4 col-span-1 lg:col-span-2">
+        {/* REMOVIDO: Gráfico de Estoque de Produtos */}
+        {/* <div className="bg-white shadow rounded-lg p-4 col-span-1 lg:col-span-2">
           <h2 className="text-lg font-semibold text-gray-700 mb-4">Top 5 Produtos em Estoque</h2>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={topProdutosEstoque}>
@@ -178,7 +177,7 @@ export default function Dashboard() {
               <Bar dataKey="estoque" fill="#f59e0b" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
-        </div>
+        </div> */}
         
       </div>
     </main>

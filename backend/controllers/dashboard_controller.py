@@ -19,7 +19,7 @@ try:
         user=os.getenv("DB_USER"),
         password=os.getenv("DB_PASSWORD"),
         database=os.getenv("DB_NAME"),
-        port=os.getenv("DB_PORT")
+        port=int(os.getenv("DB_PORT")) # Convertendo a porta para int
     )
 except mysql.connector.Error as err:
     print(f"Erro ao criar o pool de conexões do MySQL: {err}")
@@ -118,9 +118,9 @@ async def get_faturamento_mensal():
         FROM pedidos
         WHERE data_emissao >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
         GROUP BY 
-            YEAR(data_emissao),  -- Agrupa pelo ano
+            YEAR(data_emissao),    -- Agrupa pelo ano
             MONTH(data_emissao), -- Agrupa pelo mês
-            mes                  -- Inclui a coluna selecionada 'mes' no grupo
+            mes                 -- Inclui a coluna selecionada 'mes' no grupo
         ORDER BY 
             YEAR(data_emissao), MONTH(data_emissao) ASC;
     """
@@ -185,32 +185,6 @@ async def get_vendas_por_vendedor():
         WHERE vendedor_nome IS NOT NULL AND vendedor_nome != ''
         GROUP BY vendedor_nome 
         ORDER BY totalVendas DESC 
-        LIMIT 5;
-    """
-    conn = None
-    cursor = None
-    try:
-        conn = pool.get_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(query)
-        resultados = cursor.fetchall()
-        return processar_resultados(resultados)
-    except mysql.connector.Error as err:
-        raise HTTPException(status_code=500, detail=f"Erro de banco de dados: {err}")
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
-
-
-@router.get("/top-produtos-estoque")
-async def get_top_produtos_estoque():
-    """
-    Retorna os 5 produtos com maior quantidade em estoque.
-    """
-    query = """
-        SELECT descricao as produto, estoque FROM produtos 
-        WHERE estoque > 0 
-        ORDER BY estoque DESC 
         LIMIT 5;
     """
     conn = None

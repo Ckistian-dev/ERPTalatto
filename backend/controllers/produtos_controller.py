@@ -1,13 +1,13 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from fastapi import status
-from typing import Optional, List, Dict # Certifique-se de que Dict está importado
+from typing import Optional, List, Dict
 import os
 import traceback
 import mysql.connector.pooling
 import decimal
 import json
-from datetime import datetime # Certifique-se de que datetime está importado
+from datetime import datetime
 
 # Pool de conexão MySQL
 pool = mysql.connector.pooling.MySQLConnectionPool(
@@ -18,11 +18,10 @@ pool = mysql.connector.pooling.MySQLConnectionPool(
     user=os.getenv("DB_USER"),
     password=os.getenv("DB_PASSWORD"),
     database=os.getenv("DB_NAME"),
-    port=int(os.getenv("DB_PORT")) # ✅ Adicionado para puxar a porta da variável de ambiente
+    port=int(os.getenv("DB_PORT"))
 )
 
 router = APIRouter()
-
 
 class ProdutoCreate(BaseModel):
     sku: str
@@ -32,8 +31,9 @@ class ProdutoCreate(BaseModel):
     situacao: str
     tipo_produto: Optional[str] = None
     grupo: Optional[str] = None
-    estoque: Optional[int] = None
-    localizacao: Optional[str] = None
+    # REMOVIDO: estoque: Optional[int] = None
+    # REMOVIDO: localizacao: Optional[str] = None
+    permite_estoque_negativo: Optional[int] = None # Campo mantido
     peso_produto: Optional[float] = None
     peso_embalagem: Optional[float] = None
     unidade_caixa: Optional[int] = None
@@ -66,30 +66,25 @@ class ProdutoCreate(BaseModel):
     variacoes: Optional[str] = None
     quantidades: Optional[str] = None
 
-
 @router.post("/produtos", status_code=status.HTTP_201_CREATED)
 def criar_produto(produto: ProdutoCreate):
     conn = pool.get_connection()
     cursor = conn.cursor()
 
     try:
-        cursor.execute("""
+        produto_data = produto.model_dump() if hasattr(produto, 'model_dump') else produto.dict()
+        
+        campos = ", ".join(produto_data.keys())
+        placeholders = ", ".join(["%s"] * len(produto_data))
+        valores = list(produto_data.values())
+
+        cursor.execute(f"""
             INSERT INTO produtos (
-                sku, descricao, codigo_barras, unidade, situacao, tipo_produto, grupo, estoque, localizacao,
-                peso_produto, peso_embalagem, unidade_caixa, largura_embalagem, altura_embalagem, comprimento_embalagem,
-                diametro_embalagem, marca, garantia, slug, descricao_plataforma, largura_produto, altura_produto,
-                comprimento_produto, diametro_produto, material_produto, fabricante, classificacao_fiscal, origem,
-                valor_ipi, gtin, gtin_tributavel, tabela_precos, custo_produto, dias_preparacao, id_fornecedor,
-                url_imagem, imagens_plataforma, imagens_variacoes, variacoes, quantidades
+                {campos}
             ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s
+                {placeholders}
             )
-        """, tuple(produto.dict().values())) # Use .model_dump() para Pydantic v2+
+        """, valores)
 
         conn.commit()
         return {"mensagem": "Produto criado com sucesso"}
@@ -111,7 +106,7 @@ def listar_produtos_paginado(
     data_inicio: Optional[str] = None,
     data_fim: Optional[str] = None,
     ordenar_por: Optional[str] = None,
-    ordenar_direcao: Optional[str] = "asc" # default ascendente
+    ordenar_direcao: Optional[str] = "asc"
 ):
     conn = pool.get_connection()
     cursor = conn.cursor(dictionary=True)
@@ -125,7 +120,9 @@ def listar_produtos_paginado(
             "id", "sku", "codigo_barras", "descricao", "unidade", "situacao", "peso_produto",
             "tipo_produto", "grupo", "subgrupo1", "subgrupo2", "subgrupo3", "subgrupo4", "subgrupo5",
             "classificacao_fiscal", "origem", "valor_ipi", "gtin", "gtin_tributavel",
-            "estoque", "localizacao", "tipo_embalagem", "peso_embalagem", "unidade_caixa",
+            # REMOVIDO: "estoque", "localizacao",
+            "permite_estoque_negativo", # Campo mantido
+            "tipo_embalagem", "peso_embalagem", "unidade_caixa",
             "largura_embalagem", "altura_embalagem", "comprimento_embalagem", "diametro_embalagem",
             "custo_produto", "id_fornecedor", "dias_preparacao", "marca", "garantia", "slug",
             "largura_produto", "altura_produto", "comprimento_produto", "diametro_produto",
@@ -181,7 +178,6 @@ def listar_produtos_paginado(
         cursor.close()
         conn.close()
 
-
 @router.put("/produtos/{produto_id}")
 def atualizar_produto(produto_id: int, produto: dict):
     conn = pool.get_connection()
@@ -236,7 +232,6 @@ def validar_importacao_produtos(payload: dict):
         cursor.close()
         conn.close()
 
-
 @router.post("/produtos/importar_csv_confirmado")
 def importar_produtos_confirmado(payload: dict):
     registros = payload.get("registros", [])
@@ -247,9 +242,14 @@ def importar_produtos_confirmado(payload: dict):
         for produto in registros:
             produto.pop("id", None)
 
-            # Define criado_em manualmente se não vier no CSV
             if "criado_em" not in produto:
                 produto["criado_em"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            if "permite_estoque_negativo" in produto:
+                if isinstance(produto["permite_estoque_negativo"], str):
+                    produto["permite_estoque_negativo"] = 1 if produto["permite_estoque_negativo"].lower() == 'sim' else 0
+
+            # REMOVIDO: Não precisamos mais tratar 'estoque' ou 'localizacao' aqui para importação
 
             cursor.execute("SELECT id FROM produtos WHERE sku = %s", (produto["sku"],))
             existente = cursor.fetchone()
@@ -273,7 +273,6 @@ def importar_produtos_confirmado(payload: dict):
     finally:
         cursor.close()
         conn.close()
-
 
 @router.get("/produtos_dropdown")
 def listar_produtos_dropdown():
@@ -344,12 +343,10 @@ def listar_tabela_precos(produto_id: int):
             tabelas_precos = json.loads(resultado["tabela_precos"])
             response_data = []
             for nome, valor in tabelas_precos.items():
-                # Garante que apenas tabelas com um valor numérico simples sejam enviadas
                 if isinstance(valor, (int, float, decimal.Decimal)):
                     response_data.append({"id": nome, "nome": nome, "valor": float(valor)})
             return response_data
         except (json.JSONDecodeError, TypeError):
-            # Captura erros se o JSON for inválido ou a estrutura for inesperada
             raise HTTPException(status_code=500, detail="Estrutura de dados da tabela de preços é inválida.")
 
     except mysql.connector.Error as err:
@@ -357,7 +354,6 @@ def listar_tabela_precos(produto_id: int):
     finally:
         cursor.close()
         conn.close()
-
 
 @router.get("/produtos/{produto_id}")
 def obter_produto_por_id(produto_id: int):

@@ -21,6 +21,7 @@ import CampoPrecosDinamico from "../components/campos/CampoPrecosDinamico";
 import CampoMedidas from "../components/campos/CampoMedidas";
 import CampoValorMonetario from "../components/campos/CampoValorMonetario";
 import CampoDropdownDb from "../components/campos/CampoDropdownDb";
+import CampoDropdownSimNao from "../components/campos/CampoDropdownSimNao"; // <--- NOVO IMPORTE AQUI
 
 // Define a URL da API a partir das variáveis de ambiente do Vite
 const API_URL = import.meta.env.VITE_API_BASE_URL;
@@ -58,8 +59,7 @@ export default function CadastroProduto({ modo = "novo" }) {
     subgrupo3: '',
     subgrupo4: '',
     subgrupo5: '',
-    estoque: '',
-    localizacao: '',
+    permite_estoque_negativo: 0, // Definido como 0 (Não) por padrão para int
     peso_produto: '',
     peso_embalagem: '',
     unidade_caixa: '',
@@ -81,11 +81,11 @@ export default function CadastroProduto({ modo = "novo" }) {
     valor_ipi: '',
     gtin: '',
     gtin_tributavel: '',
-    tabela_precos: {}, // Alterado para objeto vazio por padrão para CampoPrecosDinamico
+    tabela_precos: {},
     custo_produto: '',
     dias_preparacao: '',
     id_fornecedor: '',
-    url_imagem: [], // Alterado para array vazio por padrão
+    url_imagem: [],
     imagens_plataforma: [],
     imagens_variacoes: [],
     variacoes: [],
@@ -99,17 +99,19 @@ export default function CadastroProduto({ modo = "novo" }) {
         ...prev,
         ...produtoEdicao,
         codigo_barras: produtoEdicao.codigo_barras || "",
-        // Garantindo que todos os campos que deveriam ser arrays/objetos sejam parseados corretamente
+        // O backend já deve retornar 0 ou 1, então usamos diretamente
+        permite_estoque_negativo: produtoEdicao.permite_estoque_negativo !== undefined && produtoEdicao.permite_estoque_negativo !== null 
+                                    ? produtoEdicao.permite_estoque_negativo 
+                                    : 0, // Padrão 0 se não vier definido
         imagens_plataforma: safeParse(produtoEdicao.imagens_plataforma, []),
         imagens_variacoes: safeParse(produtoEdicao.imagens_variacoes, []),
         variacoes: safeParse(produtoEdicao.variacoes, []),
-        quantidades: safeParse(produtoEdicao.quantidades, [1]), // Padrão [1]
-        tabela_precos: safeParse(produtoEdicao.tabela_precos, {}), // Padrão {}
+        quantidades: safeParse(produtoEdicao.quantidades, [1]),
+        tabela_precos: safeParse(produtoEdicao.tabela_precos, {}),
         material_produto: safeParse(produtoEdicao.material_produto, []),
-        url_imagem: safeParse(produtoEdicao.url_imagem, []) // Padrão []
+        url_imagem: safeParse(produtoEdicao.url_imagem, [])
       }));
     } else {
-      // Resetar formulário para o modo "novo"
       setForm({
         codigo_barras: '',
         descricao: '',
@@ -123,8 +125,7 @@ export default function CadastroProduto({ modo = "novo" }) {
         subgrupo3: '',
         subgrupo4: '',
         subgrupo5: '',
-        estoque: '',
-        localizacao: '',
+        permite_estoque_negativo: 0, // Define 0 (Não) como padrão para novos produtos
         peso_produto: '',
         peso_embalagem: '',
         unidade_caixa: '',
@@ -159,7 +160,6 @@ export default function CadastroProduto({ modo = "novo" }) {
     }
   }, [produtoEdicao, modo]);
 
-
   const abas = [
     { id: "produto", label: "Produto" },
     { id: "fiscal", label: "Fiscal" },
@@ -176,20 +176,20 @@ export default function CadastroProduto({ modo = "novo" }) {
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
-
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Serializa os campos JSON antes de enviar
     const dados = {
       ...form,
       variacoes: JSON.stringify(form.variacoes || []),
       quantidades: JSON.stringify(form.quantidades || []),
       url_imagem: JSON.stringify(form.url_imagem || []),
-      tabela_precos: JSON.stringify(form.tabela_precos || {}), // Pode ser um objeto
+      tabela_precos: JSON.stringify(form.tabela_precos || {}),
       imagens_plataforma: JSON.stringify(form.imagens_plataforma || []),
       imagens_variacoes: JSON.stringify(form.imagens_variacoes || []),
-      material_produto: JSON.stringify(form.material_produto || [])
+      material_produto: JSON.stringify(form.material_produto || []),
+      // Não precisamos mais converter aqui, pois CampoDropdownSimNao já retorna 0 ou 1
+      // permite_estoque_negativo: form.permite_estoque_negativo === 'Sim' ? 1 : 0 
     };
 
     try {
@@ -206,7 +206,6 @@ export default function CadastroProduto({ modo = "novo" }) {
       setErro(err?.response?.data?.detail || 'Erro ao salvar');
     }
   };
-
 
   const renderCampos = () => {
     switch (abaAtual) {
@@ -252,15 +251,20 @@ export default function CadastroProduto({ modo = "novo" }) {
               name="tabela_precos"
               value={form.tabela_precos || {}}
               onChange={handleChange}
-              API_URL={API_URL} // Passa API_URL para CampoPrecosDinamico
+              API_URL={API_URL}
             />
           </>
         );
       case "estoque":
         return (
           <>
-            <CampoNumSetas label="Estoque" name="estoque" value={form.estoque || ""} onChange={handleChange} placeholder="Ex: 123" />
-            <CampoDropdownEditavel label="Localização" name="localizacao" value={form.localizacao || ""} onChange={handleChange} tipo="localizacao" usuario={usuario} />
+            <CampoDropdownSimNao // <--- NOVO COMPONENTE USADO AQUI
+              label="Permite Estoque Negativo?"
+              name="permite_estoque_negativo"
+              value={form.permite_estoque_negativo} // Valor já é 0 ou 1
+              onChange={handleChange}
+              colSpan
+            />
           </>
         );
       case "embalagem":
@@ -294,8 +298,8 @@ export default function CadastroProduto({ modo = "novo" }) {
               name="id_fornecedor"
               value={form.id_fornecedor}
               onChange={handleChange}
-              url={`${API_URL}/cadastros_dropdown`} // USO DA VARIÁVEL DE AMBIENTE AQUI
-              filtro={{ tipo_cadastro: ["Fornecedor"] }} // Ajustado para array
+              url={`${API_URL}/cadastros_dropdown`}
+              filtro={{ tipo_cadastro: ["Fornecedor"] }}
               campoValor="id"
               campoLabel="nome_razao"
               colSpan
