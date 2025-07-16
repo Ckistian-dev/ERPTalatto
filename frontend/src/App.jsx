@@ -22,9 +22,13 @@ import ProduzirPedido from "./pages/ProduzirPedido"
 import EmbalarPedido from "./pages/EmbalarPedido"
 import FaturarPedido from "./pages/FaturarPedido"
 import ExpedirPedido from "./pages/ExpedirPedido"
-import CadastroContas from "./pages/CadastroContas"
-import ListarContas from "./pages/ListarContas"
+import CadastroContas from "./pages/financeiro/CadastroContas"
+import ListarContas from "./pages/financeiro/ListarContas"
 import ConsultaNFE from "./pages/ConsultaNFE"
+import ConsultaEstoque from "./pages/estoque/ConsultaEstoque";
+import CadastroPosicaoEstoque from "./pages/estoque/CadastroPosicaoEstoque";
+import SaidaEstoque from "./pages/estoque/SaidaEstoque";
+
 
 function App() {
   return (
@@ -57,6 +61,10 @@ function App() {
             <Route path="/financeiro/receber" element={<PrivateRoute><ListarContas filtro="receber" /></PrivateRoute>} />
             <Route path="/financeiro/pagar" element={<PrivateRoute><ListarContas filtro="pagar" /></PrivateRoute>} />
             <Route path="/notas" element={<PrivateRoute><ConsultaNFE/></PrivateRoute>} />
+            <Route path="/estoque" element={<PrivateRoute><ConsultaEstoque /></PrivateRoute>} />
+            <Route path="/estoque/entrada" element={<PrivateRoute><CadastroPosicaoEstoque /></PrivateRoute>} />
+            <Route path="/estoque/editar" element={<PrivateRoute><CadastroPosicaoEstoque modo="editar" /></PrivateRoute>} />
+            <Route path="/estoque/saida" element={<PrivateRoute><SaidaEstoque /></PrivateRoute>} />
           </Route>
         </Routes>
 

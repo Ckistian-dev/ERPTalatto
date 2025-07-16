@@ -34,7 +34,7 @@ export default function LayoutDashboard() {
       '/notas': 'notas',
       '/empresa': 'empresa',
       '/intelipost': 'intelipost',
-      '/anymarket': 'anymarket'
+      '/integracoes': 'integracoes'
     };
 
     let melhorCorrespondecia = '';
@@ -104,7 +104,7 @@ export default function LayoutDashboard() {
                 <SidebarItem icone={<FaTruck />} titulo="Intelipost" aberto={menuAberto === 'intelipost'} toggle={() => toggleMenu('intelipost')} submenu={["Configuração", "Dashboard"]} sidebarAberta={sidebarAberta} links={["/intelipost/config", "/intelipost/dashboard"]} location={location} />
             )}
              {verificarPermissao(usuario, ['admin']) && (
-                <SidebarItem icone={<FaStore />} titulo="AnyMarket" aberto={menuAberto === 'anymarket'} toggle={() => toggleMenu('anymarket')} submenu={["Configuração", "Produtos", "Pedidos"]} sidebarAberta={sidebarAberta} links={["/anymarket/config", "/anymarket/produtos", "/anymarket/pedidos"]} location={location} />
+                <SidebarItem icone={<FaStore />} titulo="Integrações" aberto={menuAberto === 'integracoes'} toggle={() => toggleMenu('integracoes')} submenu={["Configuração", "Produtos", "Pedidos"]} sidebarAberta={sidebarAberta} links={["/integracoes/config", "/integracoes/produtos", "/integracoes/pedidos"]} location={location} />
             )}
         </nav>
       </aside>

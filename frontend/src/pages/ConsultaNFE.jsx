@@ -15,7 +15,7 @@ import { useAuth } from '@/context/AuthContext';
 const API_URL = import.meta.env.VITE_API_BASE_URL;
 
 export default function ConsultaNFE() {
-    // --- Estados (Lógica mantida do ConsultaNFE original) ---
+    // --- Estados ---
     const [pedidos, setPedidos] = useState([]);
     const [pedidoSelecionado, setPedidoSelecionado] = useState(null);
     const { usuario } = useAuth();
@@ -36,7 +36,6 @@ export default function ConsultaNFE() {
     const [ordenacaoColuna, setOrdenacaoColuna] = useState(null);
     const [ordenacaoAscendente, setOrdenacaoAscendente] = useState(true);
     const [mostrarModalVisualizar, setMostrarModalVisualizar] = useState(false);
-    // Adicionado para suportar o novo layout de filtro
     const [opcoesDropdown, setOpcoesDropdown] = useState({});
 
     const exibirAviso = (mensagem) => setMensagemErro(mensagem);
@@ -45,6 +44,7 @@ export default function ConsultaNFE() {
     const buscarPedidosNFE = async () => {
         setLoading(true);
         try {
+            // Filtra por pedidos que já passaram pelo faturamento e estão na expedição ou concluídos
             const filtrosStr = [
                 ...filtrosSelecionados.map(f => `${f.coluna}:${f.texto}`),
                 'situacao_pedido:Expedição',
@@ -67,13 +67,14 @@ export default function ConsultaNFE() {
             setTotalPaginas(Math.ceil(res.data.total / itensPorPagina));
         } catch (error) {
             console.error('Erro ao buscar NF-es:', error);
+            toast.error("Erro ao buscar NF-es");
             setMensagemErro("Erro ao buscar NF-es");
         } finally {
             setLoading(false);
         }
     };
 
-    // --- Handlers e Funções de Suporte (Adaptados do Listapedidos) ---
+    // --- Handlers e Funções de Suporte ---
     const handleAplicarFiltros = ({ filtros, data_inicio, data_fim }) => {
         setFiltrosSelecionados(filtros || []);
         setDataInicio(data_inicio || '');
@@ -92,6 +93,14 @@ export default function ConsultaNFE() {
             if (Array.isArray(dadosJson)) return `[${dadosJson.length} itens]`;
             if (typeof dadosJson === 'object') return '{...}';
         }
+        // Formata data para o padrão brasileiro
+        if (coluna === 'data_emissao' || coluna === 'data_nf' || coluna === 'criado_em') {
+             try {
+                return new Date(valor).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+             } catch (e) {
+                return valor;
+             }
+        }
         return String(valor);
     };
 
@@ -104,17 +113,12 @@ export default function ConsultaNFE() {
     // --- UseEffects ---
     useEffect(() => {
         if (!usuario) return;
-        // ATUALIZADO: A ordem padrão agora inclui todos os campos solicitados.
         const ordemPadrao = [
-            "id", "situacao_pedido", "data_emissao", "data_validade", "cliente_id", 
-            "cliente_nome", "vendedor_id", "vendedor_nome", "origem_venda", "tipo_frete", 
-            "transportadora_id", "transportadora_nome", "valor_frete", "total", 
-            "desconto_total", "total_com_desconto", "lista_itens", "formas_pagamento", 
-            "observacao", "criado_em", "data_finalizacao", "ordem_finalizacao", 
-            "endereco_expedicao", "hora_expedicao", "usuario_expedicao", "numero_nf", 
-            "data_nf", "tecnospeed_id", "tecnospeed_id_integracao", "tecnospeed_status"
+            "id", "numero_nf", "nfe_status", "data_nf", "cliente_nome", "total_com_desconto",
+            "situacao_pedido", "data_emissao", "vendedor_nome", "nfe_chave"
         ];
         setTodasColunas(ordemPadrao);
+        // Utiliza um campo de visibilidade específico para a tela de consulta de NFe
         const colunas = usuario.colunas_visiveis_nfe?.length ? usuario.colunas_visiveis_nfe : ordemPadrao;
         setColunasVisiveis(colunas);
     }, [usuario]);
@@ -134,13 +138,15 @@ export default function ConsultaNFE() {
         }
     }, [colunasVisiveis, paginaAtual, filtrosSelecionados, filtroRapidoColuna, filtroRapidoTexto, dataInicio, dataFim, ordenacaoColuna, ordenacaoAscendente]);
 
-    // --- JSX com Layout do Listapedidos ---
+    // --- JSX (Interface do Usuário) ---
     return (
         <div className="p-6">
             <div className="w-auto overflow-auto">
+                {/* Barra de Ações e Filtros */}
                 <div className="flex flex-wrap justify-between items-center mb-4 gap-2">
                     <div className="flex gap-2 flex-wrap">
-                        <ButtonComPermissao type="button" onClick={() => {}} permissoes={["admin"]} className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded flex items-center gap-2">
+                        {/* Botão de exportar pode ser implementado no futuro */}
+                        <ButtonComPermissao type="button" onClick={() => toast.info("Função de exportar em desenvolvimento.")} permissoes={["admin"]} className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded flex items-center gap-2">
                             <FaFileCsv />Exportar CSV
                         </ButtonComPermissao>
                     </div>
@@ -164,16 +170,37 @@ export default function ConsultaNFE() {
                         <button onClick={() => setMostrarEditarTabela(true)} className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded flex items-center gap-2"><FaTable />Editar Tabela</button>
                         <button onClick={() => { if (!pedidoSelecionado) return exibirAviso("Selecione um pedido primeiro!"); setMostrarModalVisualizar(true); }} className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded flex items-center gap-2"><FaEye />Visualizar</button>
                         
-                        {/* Botões específicos da ConsultaNFE */}
-                        <button onClick={() => { if (pedidoSelecionado?.tecnospeed_id) window.open(`${API_URL}/nfe/${pedidoSelecionado.tecnospeed_id}/danfe`, '_blank', 'noopener,noreferrer'); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                        {/* Botões específicos da ConsultaNFE com a lógica correta */}
+                        <button 
+                            onClick={() => {
+                                if (pedidoSelecionado?.id) {
+                                    window.open(`${API_URL}/nfe/${pedidoSelecionado.id}/danfe`, '_blank', 'noopener,noreferrer');
+                                } else {
+                                    toast.warn("Selecione um pedido com NF-e autorizada.");
+                                }
+                            }}
+                            disabled={pedidoSelecionado?.nfe_status !== 'AUTORIZADO'}
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                        >
                             <FaFilePdf /> Ver DANFE
                         </button>
-                        <button onClick={() => { if (pedidoSelecionado?.tecnospeed_id) window.open(`${API_URL}/nfe/${pedidoSelecionado.tecnospeed_id}/xml`, '_blank', 'noopener,noreferrer'); }} className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                        <button 
+                            onClick={() => {
+                                if (pedidoSelecionado?.id) {
+                                    window.open(`${API_URL}/nfe/${pedidoSelecionado.id}/xml`, '_blank', 'noopener,noreferrer');
+                                } else {
+                                    toast.warn("Selecione um pedido com NF-e autorizada.");
+                                }
+                            }}
+                            disabled={pedidoSelecionado?.nfe_status !== 'AUTORIZADO'}
+                            className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                        >
                             <FaFileCode /> Ver XML
                         </button>
                     </div>
                 </div>
 
+                {/* Tabela de Resultados */}
                 <div className="overflow-x-auto">
                     <div className="max-w-screen-lg">
                         <table className="bg-white border border-gray-300 table-auto whitespace-nowrap w-full">
@@ -192,6 +219,7 @@ export default function ConsultaNFE() {
                                                 {colunasVisiveis.map((coluna) => (<td key={coluna} className="p-2 border whitespace-nowrap">{formatarCampo(pedido[coluna], coluna)}</td>))}
                                             </tr>
                                         ))}
+                                        {/* Preenchimento para manter altura da tabela */}
                                         {pedidos.length < 15 && Array.from({ length: 15 - pedidos.length }).map((_, idx) => (
                                             <tr key={`espaco-${idx}`} className="opacity-0 pointer-events-none select-none">
                                                 {colunasVisiveis.map((_, i) => (<td key={i} className="p-2 whitespace-nowrap">&nbsp;</td>))}
@@ -204,6 +232,7 @@ export default function ConsultaNFE() {
                     </div>
                 </div>
 
+                {/* Paginação */}
                 {!loading && totalPaginas > 1 && (
                     <div className="flex justify-start items-start gap-4 mt-4">
                         <button onClick={() => setPaginaAtual((p) => Math.max(p - 1, 1))} disabled={paginaAtual === 1} className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-50">Anterior</button>
@@ -213,6 +242,7 @@ export default function ConsultaNFE() {
                 )}
             </div>
 
+            {/* Modais */}
             <ModalErro mensagem={mensagemErro} onClose={() => setMensagemErro(null)} />
             {mostrarFiltroColunas && <ModalFiltroColunas colunas={todasColunas} colunasDropdown={colunasDropdownEditavel} onClose={() => setMostrarFiltroColunas(false)} onAplicar={handleAplicarFiltros} />}
             {mostrarEditarTabela && <ModalEditarTabela colunas={todasColunas} selecionadas={colunasVisiveis} onClose={() => setMostrarEditarTabela(false)} onSalvar={({ colunas }) => setColunasVisiveis(colunas)} />}
@@ -220,3 +250,4 @@ export default function ConsultaNFE() {
         </div>
     );
 }
+

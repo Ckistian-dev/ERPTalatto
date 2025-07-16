@@ -19,7 +19,8 @@ from controllers import (
     pedidos_controller, 
     nfe_controller, 
     contas_controller,
-    dashboard_controller
+    dashboard_controller,
+    estoque_controller
 )
 
 app = FastAPI(
@@ -56,6 +57,7 @@ app.include_router(orcamento_controller.router)
 app.include_router(pedidos_controller.router)
 app.include_router(nfe_controller.router)
 app.include_router(contas_controller.router)
+app.include_router(estoque_controller.router)
 
 @app.get("/", tags=["Root"])
 def read_root():
