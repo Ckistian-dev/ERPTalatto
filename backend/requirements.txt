@@ -8,5 +8,5 @@ pydantic==2.7.4
 python-dotenv==1.0.1
 requests==2.32.3
 python-dateutil==2.9.0.post0
-pynfe[impressao]==4.1.0
+pynfe[impressao]==0.6.0
 lxml==5.2.2
