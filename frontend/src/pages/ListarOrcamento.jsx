@@ -99,7 +99,7 @@ export default function Listaorcamentos() {
         // Configuração de colunas
         const ordemPadrao = [
             "id",
-            "situacao_orcamento",
+            "situacao_pedido",
             "data_emissao",
             "data_validade",
             "cliente_id",

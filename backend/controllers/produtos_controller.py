@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+# controllers/produtos_controller.py
+
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
-from fastapi import status
-from typing import Optional, List, Dict
+from typing import Optional
 import os
 import traceback
 import mysql.connector.pooling
@@ -26,29 +27,25 @@ router = APIRouter()
 class ProdutoCreate(BaseModel):
     sku: str
     descricao: str
-    codigo_barras: Optional[str]
+    codigo_barras: Optional[str] = None
     unidade: str
     situacao: str
     tipo_produto: Optional[str] = None
     grupo: Optional[str] = None
-    # REMOVIDO: estoque: Optional[int] = None
-    # REMOVIDO: localizacao: Optional[str] = None
-    permite_estoque_negativo: Optional[int] = None # Campo mantido
+    permite_estoque_negativo: Optional[int] = None
     peso_produto: Optional[float] = None
     peso_embalagem: Optional[float] = None
     unidade_caixa: Optional[int] = None
     largura_embalagem: Optional[float] = None
     altura_embalagem: Optional[float] = None
     comprimento_embalagem: Optional[float] = None
-    diametro_embalagem: Optional[float] = None
     marca: Optional[str] = None
-    garantia: Optional[str] = None
+    garantia: Optional[int] = None
     slug: Optional[str] = None
     descricao_plataforma: Optional[str] = None
     largura_produto: Optional[float] = None
     altura_produto: Optional[float] = None
     comprimento_produto: Optional[float] = None
-    diametro_produto: Optional[float] = None
     material_produto: Optional[str] = None
     fabricante: Optional[str] = None
     classificacao_fiscal: Optional[str] = None
@@ -65,36 +62,37 @@ class ProdutoCreate(BaseModel):
     imagens_variacoes: Optional[str] = None
     variacoes: Optional[str] = None
     quantidades: Optional[str] = None
+    tipo_embalagem: Optional[str] = None
+
 
 @router.post("/produtos", status_code=status.HTTP_201_CREATED)
 def criar_produto(produto: ProdutoCreate):
-    conn = pool.get_connection()
-    cursor = conn.cursor()
-
+    conn = None
+    cursor = None
     try:
-        produto_data = produto.model_dump() if hasattr(produto, 'model_dump') else produto.dict()
+        conn = pool.get_connection()
+        cursor = conn.cursor()
+        
+        produto_data = produto.model_dump(exclude_unset=True)
         
         campos = ", ".join(produto_data.keys())
         placeholders = ", ".join(["%s"] * len(produto_data))
         valores = list(produto_data.values())
 
-        cursor.execute(f"""
-            INSERT INTO produtos (
-                {campos}
-            ) VALUES (
-                {placeholders}
-            )
-        """, valores)
-
+        cursor.execute(f"INSERT INTO produtos ({campos}) VALUES ({placeholders})", valores)
         conn.commit()
+        
         return {"mensagem": "Produto criado com sucesso"}
 
     except mysql.connector.Error as err:
         raise HTTPException(status_code=500, detail=f"Erro no servidor: {err}")
 
     finally:
-        cursor.close()
-        conn.close()
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
 
 @router.get("/produtos/paginado")
 def listar_produtos_paginado(
@@ -120,12 +118,10 @@ def listar_produtos_paginado(
             "id", "sku", "codigo_barras", "descricao", "unidade", "situacao", "peso_produto",
             "tipo_produto", "grupo", "subgrupo1", "subgrupo2", "subgrupo3", "subgrupo4", "subgrupo5",
             "classificacao_fiscal", "origem", "valor_ipi", "gtin", "gtin_tributavel",
-            # REMOVIDO: "estoque", "localizacao",
-            "permite_estoque_negativo", # Campo mantido
-            "tipo_embalagem", "peso_embalagem", "unidade_caixa",
-            "largura_embalagem", "altura_embalagem", "comprimento_embalagem", "diametro_embalagem",
+            "permite_estoque_negativo", "tipo_embalagem", "peso_embalagem", "unidade_caixa",
+            "largura_embalagem", "altura_embalagem", "comprimento_embalagem",
             "custo_produto", "id_fornecedor", "dias_preparacao", "marca", "garantia", "slug",
-            "largura_produto", "altura_produto", "comprimento_produto", "diametro_produto",
+            "largura_produto", "altura_produto", "comprimento_produto",
             "fabricante", "criado_em"
         ]
         
@@ -136,10 +132,11 @@ def listar_produtos_paginado(
             for par in filtros.split(";"):
                 if ":" in par:
                     coluna, texto = par.split(":", 1)
-                    where_clauses.append(f"{coluna} LIKE %s")
-                    valores.append(f"%{texto}%")
+                    if coluna in colunas_validas:
+                        where_clauses.append(f"{coluna} LIKE %s")
+                        valores.append(f"%{texto}%")
 
-        if filtro_rapido_coluna and filtro_rapido_texto:
+        if filtro_rapido_coluna and filtro_rapido_texto and filtro_rapido_coluna in colunas_validas:
             where_clauses.append(f"{filtro_rapido_coluna} LIKE %s")
             valores.append(f"%{filtro_rapido_texto}%")
 
@@ -162,17 +159,13 @@ def listar_produtos_paginado(
             ORDER BY {coluna_ordenacao} {direcao_ordenacao}
             LIMIT %s OFFSET %s
         """
-
         cursor.execute(query, valores + [limit, offset])
         resultados = cursor.fetchall()
 
-        return {
-            "total": total,
-            "resultados": resultados
-        }
+        return {"total": total, "resultados": resultados}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao listar produtos paginados: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro ao listar produtos: {str(e)}")
 
     finally:
         cursor.close()
@@ -306,9 +299,20 @@ def listar_variacoes(produto_id: int):
     try:
         cursor.execute("SELECT variacoes FROM produtos WHERE id = %s", (produto_id,))
         resultado = cursor.fetchone()
-        if not resultado:
+
+        if not resultado or not resultado["variacoes"]:
             return []
-        variacoes = json.loads(resultado["variacoes"]) if resultado["variacoes"] else []
+
+        try:
+            # Tenta converter a string JSON para uma lista Python
+            variacoes = json.loads(resultado["variacoes"])
+            if not isinstance(variacoes, list): # Garante que o JSON é uma lista
+                return []
+        except json.JSONDecodeError:
+            # Se a string não for um JSON válido, retorna uma lista vazia
+            # para não quebrar o frontend.
+            return []
+
         return [{"id": v, "descricao": v} for v in variacoes]
     finally:
         cursor.close()

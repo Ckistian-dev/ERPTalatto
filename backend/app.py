@@ -5,6 +5,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 import os
 from dotenv import load_dotenv
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 
 load_dotenv()
 
@@ -20,7 +23,10 @@ from controllers import (
     nfe_controller, 
     contas_controller,
     dashboard_controller,
-    estoque_controller
+    estoque_controller,
+    empresa_controller,
+    regras_controller,
+    embalagem_controller
 )
 
 app = FastAPI(
@@ -36,7 +42,6 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 origins_str = os.getenv("FRONTEND_URLS", "http://localhost:5173")
 allowed_origins = [origin.strip() for origin in origins_str.split(',')]
 
-print(f"INFO: Origens CORS permitidas: {allowed_origins}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -48,6 +53,9 @@ app.add_middleware(
 
 # --- Inclusão das Rotas dos Controladores ---
 app.include_router(auth_controller.router, prefix="/auth", tags=["auth"])
+app.include_router(empresa_controller.router, prefix="/api")
+app.include_router(regras_controller.router, prefix="/api")
+app.include_router(embalagem_controller.router) 
 app.include_router(dashboard_controller.router) 
 app.include_router(cnpj_controller.router)
 app.include_router(cadastros_controller.router)

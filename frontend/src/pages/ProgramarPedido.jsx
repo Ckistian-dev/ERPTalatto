@@ -21,6 +21,7 @@ import { useAuth } from '@/context/AuthContext'
 // VITE_API_BASE_URL=https://erptalatto-production.up.railway.app
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
+
 export default function Listapedidos() {
     // Estados principais
     const [pedidos, setpedidos] = useState([])
@@ -278,16 +279,18 @@ export default function Listapedidos() {
         }
     }, [filtroRapidoColuna])
 
-    const atualizarPedido = async (alteracoes = {}) => {
-        if (!pedidoSelecionado) return;
+    const atualizarPedido = async (pedidoParaAtualizar, alteracoes = {}) => {
+        if (!pedidoParaAtualizar) {
+            toast.error("Nenhum pedido selecionado para atualização.");
+            return;
+        }
 
         try {
-            // Usar a variável API_BASE_URL aqui
+            // Passo 1: Buscar a versão mais recente e completa do pedido.
             const res = await axios.get(`${API_BASE_URL}/pedidos/paginado`, {
                 params: {
                     filtro_rapido_coluna: "id",
-                    filtro_rapido_texto: pedidoSelecionado.id,
-                    page: 1,
+                    filtro_rapido_texto: pedidoParaAtualizar.id,
                     limit: 1
                 }
             });
@@ -295,45 +298,46 @@ export default function Listapedidos() {
             const pedidoCompleto = res.data.resultados?.[0];
 
             if (!pedidoCompleto) {
-                toast.error("Pedido não encontrado.");
+                toast.error("Erro: Pedido não encontrado no banco de dados.");
                 return;
             }
 
-            const payload = {
-                // dados fixos do pedido
-                data_emissao: pedidoCompleto.data_emissao,
-                data_validade: pedidoCompleto.data_validade,
-                cliente: pedidoCompleto.cliente_id,
-                cliente_nome: pedidoCompleto.cliente_nome,
-                vendedor: pedidoCompleto.vendedor_id,
-                vendedor_nome: pedidoCompleto.vendedor_nome,
-                origem_venda: pedidoCompleto.origem_venda,
-                tipo_frete: pedidoCompleto.tipo_frete,
-                transportadora: pedidoCompleto.transportadora_id,
-                transportadora_nome: pedidoCompleto.transportadora_nome,
-                valor_frete: pedidoCompleto.valor_frete,
-                total: pedidoCompleto.total,
-                desconto_total: pedidoCompleto.desconto_total,
-                total_com_desconto: pedidoCompleto.total_com_desconto,
-                lista_itens: JSON.parse(pedidoCompleto.lista_itens || "[]"),
-                formas_pagamento: JSON.parse(pedidoCompleto.formas_pagamento || "[]"),
-                observacao: pedidoCompleto.observacao || "",
-                data_finalizacao: pedidoCompleto.data_finalizacao,
-                ordem_finalizacao: pedidoCompleto.ordem_finalizacao,
+            // --- INÍCIO DA CORREÇÃO ---
 
-                // sobrescreve com alterações fornecidas
-                ...alteracoes
-            };
+            // Passo 2: Monta o payload base com os dados do banco.
+            const payload = { ...pedidoCompleto };
 
-            // Usar a variável API_BASE_URL aqui
-            await axios.put(`${API_BASE_URL}/pedidos/${pedidoSelecionado.id}`, payload);
+            // Passo 3: LIMPA qualquer campo de programação antigo ou inconsistente.
+            // Isso garante que não enviaremos dados conflitantes.
+            delete payload.programacao;
+            delete payload.programacao_estoque;
+
+            // Passo 4: Adiciona os novos dados vindos do modal.
+            // A chave aqui deve ser 'programacao', conforme sua preferência.
+            Object.assign(payload, alteracoes);
+
+            // Passo 5: Garante que os outros campos JSON estejam no formato correto.
+            payload.lista_itens = JSON.parse(payload.lista_itens || '[]');
+            payload.formas_pagamento = JSON.parse(payload.formas_pagamento || '[]');
+            payload.endereco_expedicao = JSON.parse(payload.endereco_expedicao || 'null');
+
+            // Passo 6: Limpa campos desnecessários para o update.
+            delete payload.id;
+            delete payload.criado_em;
+
+            // --- FIM DA CORREÇÃO ---
+
+            // Passo 7: Envia a requisição PUT com o payload limpo e correto.
+            await axios.put(`${API_BASE_URL}/pedidos/${pedidoParaAtualizar.id}`, payload);
 
             toast.success("Pedido atualizado com sucesso!");
             setpedidoSelecionado(null);
             buscarpedidos();
+
         } catch (error) {
-            console.error("Erro ao atualizar pedido:", error);
-            toast.error("Erro ao atualizar o pedido.");
+            console.error("Erro ao atualizar pedido:", error.response?.data || error.message);
+            const errorMsg = error.response?.data?.detail?.[0]?.msg || "Erro ao atualizar o pedido.";
+            toast.error(errorMsg);
         }
     };
 
@@ -634,14 +638,53 @@ export default function Listapedidos() {
 
             {mostrarModalProgramar && (
                 <ModalProgramacaoPedido
+                    pedido={pedidoSelecionado}
                     onClose={() => setMostrarModalProgramar(false)}
-                    onConfirmar={async (dados) => {
-                        await atualizarPedido(dados)
-                        setMostrarModalProgramar(false)
+                    // ✅ GARANTA QUE SUA FUNÇÃO onConfirmar ESTEJA EXATAMENTE ASSIM:
+                    onConfirmar={async (dadosProgramacao) => {
+                        if (!pedidoSelecionado) return;
+
+                        try {
+                            // Passo 1: Atualiza o pedido com o plano de programação.
+                            // 'dadosProgramacao' agora contém o objeto { ..., programacao: { ... } }
+                            await atualizarPedido(pedidoSelecionado, dadosProgramacao);
+
+                            // Passo 2: Extrai o plano de programação do payload recebido do modal.
+                            // USA O NOME CORRETO 'programacao' AQUI!
+                            const programacao = dadosProgramacao.programacao;
+
+                            // Passo 3: Acessa a lista de retiradas DENTRO do objeto de programação.
+                            const retiradas = programacao?.retiradas_estoque || [];
+
+                            // Passo 4: Se existirem itens para retirar, monta e envia a requisição para a API de estoque.
+                            // Se 'retiradas' estiver vazio, esta parte é pulada e o estoque não é alterado (o que está correto).
+                            if (retiradas.length > 0) {
+
+                                // Monta o payload que a API /api/estoque/reservar espera
+                                const payloadReservas = {
+                                    id_pedido: pedidoSelecionado.id,
+                                    reservas: retiradas.map(retirada => ({
+                                        id_produto: retirada.produto_id,
+                                        quantidade: retirada.quantidade,
+                                        ...retirada.origem // Adiciona lote, deposito, rua, etc.
+                                    }))
+                                };
+
+                                // Envia a requisição para efetivamente atualizar o estoque
+                                await axios.post(`${API_BASE_URL}/api/estoque/reservar`, payloadReservas);
+                                toast.success("Estoque reservado com sucesso!");
+                            }
+
+                            setMostrarModalProgramar(false);
+
+                        } catch (error) {
+                            console.error("Falha no processo de programação ou reserva:", error.response?.data || error.message);
+                            const errorMsg = error.response?.data?.detail || "Ocorreu uma falha no processo de reserva.";
+                            toast.error(errorMsg);
+                        }
                     }}
                 />
             )}
-
         </div>
     )
 }

@@ -46,3 +46,17 @@ class ProdutoSearchResponse(BaseModel):
     id: int
     descricao: str
     class Config: from_attributes = True
+    
+class ReservaItem(BaseModel):
+    id_produto: int
+    lote: str
+    deposito: str
+    rua: str
+    numero: str
+    nivel: str
+    cor: str
+    quantidade: Decimal # Quantidade a ser reservada
+
+class ReservaPayload(BaseModel):
+    reservas: List[ReservaItem]
+    id_pedido: int # Opcional, para rastreabilidade

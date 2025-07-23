@@ -13,7 +13,6 @@ export default function CampoTextarea({ label, name, value, onChange, colSpan = 
         maxLength={255}
         className="w-full border border-gray-300 p-2 rounded resize-y min-h-[80px]"
       />
-      <p className="text-sm text-gray-500 mt-1 text-right">{value.length}/255</p>
     </div>
   );
 }

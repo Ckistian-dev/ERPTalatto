@@ -9,7 +9,8 @@ export default function CampoNumSetas({
   colSpan,
   min = 0,
   max = 999999,
-  placeholder = ""
+  placeholder = "",
+  disabled = false
 }) {
   const handleChange = (e) => {
     const val = parseInt(e.target.value, 10);
@@ -43,12 +44,14 @@ export default function CampoNumSetas({
             min={min}
             max={max}
             placeholder={placeholder}
+            disabled={disabled}
             className="flex-1 h-full px-3 text-sm text-gray-800 focus:outline-none"
           />
           <div className="w-4 h-full flex flex-col items-center justify-center border-l border-gray-300">
             <button
               type="button"
               onClick={() => alterarValor(1)}
+              disabled={disabled}
               className="h-1/2 w-full flex items-center justify-center hover:bg-gray-200"
             >
               <ChevronUp size={14} className="text-gray-500" />
@@ -56,6 +59,7 @@ export default function CampoNumSetas({
             <button
               type="button"
               onClick={() => alterarValor(-1)}
+              disabled={disabled}
               className="h-1/2 w-full flex items-center justify-center hover:bg-gray-200"
             >
               <ChevronDown size={14} className="text-gray-500" />

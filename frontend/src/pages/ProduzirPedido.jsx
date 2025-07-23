@@ -115,6 +115,7 @@ export default function Listapedidos() {
             "lista_itens",
             "formas_pagamento",
             "observacao",
+            "programacao",
             "criado_em",
             "data_finalizacao",
             "ordem_finalizacao",

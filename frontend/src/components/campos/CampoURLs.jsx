@@ -34,7 +34,7 @@ export default function CampoURLs({
                     {obrigatorio && <span className="text-red-600">*</span>}
                 </label>
 
-                <div className="flex gap-2 mb-2">
+                <div className="flex gap-2 mb-2 min-h-10">
                     <input
                         type="text"
                         value={novaUrl}

@@ -7,7 +7,7 @@ from config.database import get_db
 from models.estoque_model import EstoquePosicao, Produto
 from schemas.estoque_schema import (
     EntradaCreate, SaidaCreate, EstoquePosicaoResponse, 
-    EstoquePosicaoConsolidadaResponse, ProdutoSearchResponse
+    EstoquePosicaoConsolidadaResponse, ProdutoSearchResponse, ReservaPayload
 )
 
 router = APIRouter(prefix="/api/estoque", tags=["Estoque"])
@@ -129,3 +129,59 @@ def search_produtos(q: Optional[str] = None, db: Session = Depends(get_db)):
     query = db.query(Produto)
     if q: query = query.filter(Produto.descricao.ilike(f"%{q}%"))
     return query.limit(20).all()
+
+
+@router.post("/reservar", status_code=200)
+def reservar_estoque_para_pedido(payload: ReservaPayload, db: Session = Depends(get_db)):
+    """
+    Endpoint para reservar quantidades de estoque para um pedido.
+    Diminui o estoque 'Disponível' e cria/incrementa o estoque 'Reservado'.
+    """
+    try:
+        for reserva in payload.reservas:
+            # 1. Encontrar a posição de estoque 'Disponível' de origem
+            pk_disponivel = {
+                "id_produto": reserva.id_produto,
+                "lote": reserva.lote,
+                "deposito": reserva.deposito,
+                "rua": reserva.rua,
+                "numero": reserva.numero,
+                "nivel": reserva.nivel,
+                "cor": reserva.cor,
+                "situacao_estoque": "Disponível" 
+            }
+
+            posicao_disponivel = db.query(EstoquePosicao).filter_by(**pk_disponivel).with_for_update().first()
+
+            # 2. Validar se a posição e a quantidade são válidas
+            if not posicao_disponivel:
+                raise HTTPException(status_code=404, detail=f"Posição de estoque 'Disponível' não encontrada para o produto {reserva.id_produto}, lote {reserva.lote}.")
+
+            if posicao_disponivel.quantidade < reserva.quantidade:
+                raise HTTPException(status_code=400, detail=f"Quantidade insuficiente no estoque 'Disponível' para o produto {reserva.id_produto}. Disponível: {posicao_disponivel.quantidade}, Solicitado: {reserva.quantidade}")
+
+            # 3. Diminuir a quantidade do estoque 'Disponível'
+            posicao_disponivel.quantidade -= reserva.quantidade
+
+            # 4. Encontrar ou criar a posição de estoque 'Reservado'
+            pk_reservado = pk_disponivel.copy()
+            pk_reservado["situacao_estoque"] = "Reservado"
+
+            posicao_reservada = db.query(EstoquePosicao).filter_by(**pk_reservado).with_for_update().first()
+
+            if posicao_reservada:
+                # Se já existe uma linha 'Reservado', apenas incrementa a quantidade
+                posicao_reservada.quantidade += reserva.quantidade
+            else:
+                # Se não existe, cria uma nova linha 'Reservado'
+                nova_posicao_reservada = EstoquePosicao(**pk_reservado, quantidade=reserva.quantidade)
+                db.add(nova_posicao_reservada)
+
+        # 5. Efetivar todas as alterações no banco de dados de uma vez
+        db.commit()
+
+        return {"mensagem": f"Estoque reservado com sucesso para o pedido {payload.id_pedido}."}
+
+    except Exception as e:
+        db.rollback() # Desfaz todas as alterações em caso de erro
+        raise e

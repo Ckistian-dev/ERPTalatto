@@ -95,11 +95,11 @@ export default function ConsultaNFE() {
         }
         // Formata data para o padrão brasileiro
         if (coluna === 'data_emissao' || coluna === 'data_nf' || coluna === 'criado_em') {
-             try {
+            try {
                 return new Date(valor).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
-             } catch (e) {
+            } catch (e) {
                 return valor;
-             }
+            }
         }
         return String(valor);
     };
@@ -114,24 +114,59 @@ export default function ConsultaNFE() {
     useEffect(() => {
         if (!usuario) return;
         const ordemPadrao = [
-            "id", "numero_nf", "nfe_status", "data_nf", "cliente_nome", "total_com_desconto",
-            "situacao_pedido", "data_emissao", "vendedor_nome", "nfe_chave"
+            "id",
+            "situacao_pedido",
+            "data_emissao",
+            "data_validade",
+            "cliente_id",
+            "cliente_nome",
+            "vendedor_id",
+            "vendedor_nome",
+            "origem_venda",
+            "tipo_frete",
+            "transportadora_id",
+            "transportadora_nome",
+            "valor_frete",
+            "total",
+            "desconto_total",
+            "total_com_desconto",
+            "lista_itens",
+            "formas_pagamento",
+            "observacao",
+            "criado_em",
+            "data_finalizacao",
+            "ordem_finalizacao",
+            "endereco_expedicao",
+            "hora_expedicao",
+            "usuario_expedicao",
+            "numero_nf",
+            "serie_nfe",
+            "data_nf",
+            "nfe_chave",
+            "nfe_status",
+            "nfe_recibo",
+            "nfe_protocolo",
+            "nfe_data_autorizacao",
+            "nfe_rejeicao_motivo",
+            "nfe_xml_path",
+            "nfe_danfe_path",
+            "natureza_operacao"
         ];
         setTodasColunas(ordemPadrao);
         // Utiliza um campo de visibilidade específico para a tela de consulta de NFe
         const colunas = usuario.colunas_visiveis_nfe?.length ? usuario.colunas_visiveis_nfe : ordemPadrao;
         setColunasVisiveis(colunas);
     }, [usuario]);
-    
+
     useEffect(() => {
         const tipo = colunasDropdownEditavel[filtroRapidoColuna];
         if (tipo && !opcoesDropdown[filtroRapidoColuna]) {
             axios.get(`${API_URL}/opcoes/${tipo}`)
-                 .then(res => setOpcoesDropdown(prev => ({ ...prev, [filtroRapidoColuna]: res.data })))
-                 .catch(() => console.warn("Erro ao buscar opções para filtro"));
+                .then(res => setOpcoesDropdown(prev => ({ ...prev, [filtroRapidoColuna]: res.data })))
+                .catch(() => console.warn("Erro ao buscar opções para filtro"));
         }
     }, [filtroRapidoColuna]);
-    
+
     useEffect(() => {
         if (colunasVisiveis.length > 0) {
             buscarPedidosNFE();
@@ -169,9 +204,9 @@ export default function ConsultaNFE() {
                         <button onClick={() => setMostrarFiltroColunas(true)} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded flex items-center gap-2"><FaFilter />Filtro Avançado</button>
                         <button onClick={() => setMostrarEditarTabela(true)} className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded flex items-center gap-2"><FaTable />Editar Tabela</button>
                         <button onClick={() => { if (!pedidoSelecionado) return exibirAviso("Selecione um pedido primeiro!"); setMostrarModalVisualizar(true); }} className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded flex items-center gap-2"><FaEye />Visualizar</button>
-                        
+
                         {/* Botões específicos da ConsultaNFE com a lógica correta */}
-                        <button 
+                        <button
                             onClick={() => {
                                 if (pedidoSelecionado?.id) {
                                     window.open(`${API_URL}/nfe/${pedidoSelecionado.id}/danfe`, '_blank', 'noopener,noreferrer');
@@ -179,12 +214,11 @@ export default function ConsultaNFE() {
                                     toast.warn("Selecione um pedido com NF-e autorizada.");
                                 }
                             }}
-                            disabled={pedidoSelecionado?.nfe_status !== 'AUTORIZADO'}
                             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
                         >
                             <FaFilePdf /> Ver DANFE
                         </button>
-                        <button 
+                        <button
                             onClick={() => {
                                 if (pedidoSelecionado?.id) {
                                     window.open(`${API_URL}/nfe/${pedidoSelecionado.id}/xml`, '_blank', 'noopener,noreferrer');
@@ -192,7 +226,6 @@ export default function ConsultaNFE() {
                                     toast.warn("Selecione um pedido com NF-e autorizada.");
                                 }
                             }}
-                            disabled={pedidoSelecionado?.nfe_status !== 'AUTORIZADO'}
                             className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
                         >
                             <FaFileCode /> Ver XML
@@ -200,31 +233,54 @@ export default function ConsultaNFE() {
                     </div>
                 </div>
 
-                {/* Tabela de Resultados */}
+                {/* Tabela de pedidos */}
                 <div className="overflow-x-auto">
                     <div className="max-w-screen-lg">
                         <table className="bg-white border border-gray-300 table-auto whitespace-nowrap w-full">
                             <thead>
-                                <tr>{colunasVisiveis.map((coluna) => (<th key={coluna} className="p-2 border whitespace-nowrap">{coluna === 'id' ? '#' : coluna.replace(/_/g, ' ').toUpperCase()}</th>))}</tr>
+                                <tr>
+                                    {colunasVisiveis.map((coluna) => (
+                                        <th key={coluna} className="p-2 border whitespace-nowrap">
+                                            {coluna === 'id' ? '#' : coluna.replace(/_/g, ' ').toUpperCase()}
+                                        </th>
+                                    ))}
+                                </tr>
                             </thead>
                             <tbody>
-                                {loading ? (
-                                    <tr><td colSpan={colunasVisiveis.length} className="text-center p-8 h-[63vh]">Carregando NF-es...</td></tr>
-                                ) : pedidos.length === 0 ? (
-                                    <tr><td colSpan={colunasVisiveis.length}><div className="flex items-center justify-center h-[63vh]"><span className="text-gray-500 text-lg">Nenhuma NF-e encontrada.</span></div></td></tr>
+                                {pedidos.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={colunasVisiveis.length}>
+                                            <div className="flex items-center pl-[63vh] h-[63vh]">
+                                                <span className="text-gray-500 text-lg">Nenhum pedido encontrado.</span>
+                                            </div>
+                                        </td>
+                                    </tr>
                                 ) : (
                                     <>
-                                        {pedidos.map((pedido) => (
-                                            <tr key={pedido.id} onClick={() => setPedidoSelecionado(pedido)} className={`cursor-pointer ${pedidoSelecionado?.id === pedido.id ? 'bg-gray-100' : ''}`}>
-                                                {colunasVisiveis.map((coluna) => (<td key={coluna} className="p-2 border whitespace-nowrap">{formatarCampo(pedido[coluna], coluna)}</td>))}
+                                        {pedidos.map((pedido, i) => (
+                                            <tr
+                                                key={pedido.id || i}
+                                                onClick={() => setpedidoSelecionado(pedido)}
+                                                className={`cursor-pointer ${pedidoSelecionado?.id === pedido.id ? 'bg-gray-100' : ''}`}
+                                            >
+                                                {colunasVisiveis.map((coluna) => (
+                                                    <td key={coluna} className="p-2 border whitespace-nowrap">
+                                                        {pedido[coluna]}
+                                                    </td>
+                                                ))}
                                             </tr>
                                         ))}
-                                        {/* Preenchimento para manter altura da tabela */}
-                                        {pedidos.length < 15 && Array.from({ length: 15 - pedidos.length }).map((_, idx) => (
-                                            <tr key={`espaco-${idx}`} className="opacity-0 pointer-events-none select-none">
-                                                {colunasVisiveis.map((_, i) => (<td key={i} className="p-2 whitespace-nowrap">&nbsp;</td>))}
-                                            </tr>
-                                        ))}
+
+                                        {/* Preenche espaço visual com linhas invisíveis */}
+                                        {pedidos.length < 15 &&
+                                            Array.from({ length: 15 - pedidos.length }).map((_, idx) => (
+                                                <tr key={`espaco-${idx}`} className="opacity-0 pointer-events-none select-none">
+                                                    {colunasVisiveis.map((_, i) => (
+                                                        <td key={i} className="p-2 whitespace-nowrap">&nbsp;</td>
+                                                    ))}
+                                                </tr>
+                                            ))
+                                        }
                                     </>
                                 )}
                             </tbody>
@@ -233,13 +289,11 @@ export default function ConsultaNFE() {
                 </div>
 
                 {/* Paginação */}
-                {!loading && totalPaginas > 1 && (
-                    <div className="flex justify-start items-start gap-4 mt-4">
-                        <button onClick={() => setPaginaAtual((p) => Math.max(p - 1, 1))} disabled={paginaAtual === 1} className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-50">Anterior</button>
-                        <span>Página {paginaAtual} de {totalPaginas}</span>
-                        <button onClick={() => setPaginaAtual((p) => Math.min(p + 1, totalPaginas))} disabled={paginaAtual >= totalPaginas} className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-50">Próxima</button>
-                    </div>
-                )}
+                <div className="flex justify-start items-start gap-4 mt-4">
+                    <button onClick={() => setPaginaAtual((p) => Math.max(p - 1, 1))} disabled={paginaAtual === 1} className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-50">Anterior</button>
+                    <span>Página {paginaAtual} de {totalPaginas}</span>
+                    <button onClick={() => setPaginaAtual((p) => Math.min(p + 1, totalPaginas))} disabled={paginaAtual >= totalPaginas} className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-50">Próxima</button>
+                </div>
             </div>
 
             {/* Modais */}

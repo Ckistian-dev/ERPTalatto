@@ -107,7 +107,7 @@ export default function CadastroPedido({ modo = "novo" }) {
         };
         fetchPrecoDoProduto();
     }, [form.produto_selecionado]);
-    
+
     useEffect(() => {
         const totalItens = itens.reduce((acc, item) => acc + (Number(item.total_com_desconto) || 0), 0);
         setForm(prevForm => ({ ...prevForm, total: totalItens }));
@@ -144,21 +144,45 @@ export default function CadastroPedido({ modo = "novo" }) {
             return;
         }
 
-        // Cria o payload e renomeia as chaves para corresponder ao backend.
-        const payload = { 
-            ...form, 
-            lista_itens: itens,
+        // --- INÍCIO DA CORREÇÃO PRINCIPAL ---
+
+        // Passo 1: Monta o payload base com os dados do formulário.
+        const payload = {
+            ...form,
+            lista_itens: itens, // Garante que a lista de itens mais atual seja usada
             cliente_id: form.cliente,
             vendedor_id: form.vendedor,
-            transportadora_id: form.transportadora
+            transportadora_id: form.transportadora,
         };
-        
+
+        // Passo 2: Garante que todos os campos que são JSON no banco
+        // sejam enviados como objetos/arrays, e não como texto.
+        // Isso é crucial para a validação no backend.
+        if (typeof payload.lista_itens === 'string') {
+            payload.lista_itens = JSON.parse(payload.lista_itens || '[]');
+        }
+        if (typeof payload.formas_pagamento === 'string') {
+            payload.formas_pagamento = JSON.parse(payload.formas_pagamento || '[]');
+        }
+        if (typeof payload.programacao === 'string') {
+            payload.programacao = JSON.parse(payload.programacao || 'null');
+        }
+        if (typeof payload.endereco_expedicao === 'string') {
+            payload.endereco_expedicao = JSON.parse(payload.endereco_expedicao || 'null');
+        }
+
+        // Passo 3: Limpa chaves antigas que não são usadas no backend.
         delete payload.cliente;
         delete payload.vendedor;
         delete payload.transportadora;
+        delete payload.importar_orcamento;
+        delete payload.produto_selecionado;
+
+        // --- FIM DA CORREÇÃO PRINCIPAL ---
 
         try {
             if (modo === "editar" && form.id) {
+                // Envia o payload corrigido para a API
                 await axios.put(`${API_URL}/pedidos/${form.id}`, payload);
                 toast.success("Pedido atualizado com sucesso!");
             } else {
@@ -168,7 +192,7 @@ export default function CadastroPedido({ modo = "novo" }) {
             navigate("/pedidos");
         } catch (err) {
             const errorMsg = err?.response?.data?.detail || "Erro ao salvar o pedido.";
-            console.error("Erro do Backend:", err.response.data); 
+            console.error("Erro do Backend:", err.response?.data);
             setErro(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg));
             toast.error("Falha ao salvar. Verifique os erros.");
         }
@@ -195,7 +219,7 @@ export default function CadastroPedido({ modo = "novo" }) {
                                 if (!orc) return;
 
                                 const listaItens = typeof orc.lista_itens === "string" ? JSON.parse(orc.lista_itens || "[]") : orc.lista_itens || [];
-                                
+
                                 setForm(prev => ({
                                     ...prev,
                                     importar_orcamento: orc.id,
@@ -213,7 +237,7 @@ export default function CadastroPedido({ modo = "novo" }) {
                                     desconto_total: orc.desconto_total,
                                     total_com_desconto: orc.total_com_desconto,
                                 }));
-                                
+
                                 setItens(listaItens);
                             }}
                             colSpan
@@ -230,7 +254,7 @@ export default function CadastroPedido({ modo = "novo" }) {
             case "itens":
                 return <CampoItens form={form} setForm={setForm} itens={itens} setItens={setItens} precosDisponiveis={precosDisponiveis} API_URL={API_URL} />;
             case "dados_frete":
-                 return (
+                return (
                     <>
                         <CampoDropdownEditavel label="Tipo de Frete" name="tipo_frete" value={form.tipo_frete || ""} onChange={handleChange} tipo="tipo_frete" usuario={usuario} obrigatorio />
                         <CampoDropdownDb label="Transportadora" name="transportadora" value={form.transportadora || ""} onChange={handleChange} url={`${API_URL}/cadastros_dropdown`} filtro={{ tipo_cadastro: ["Transportadora"] }} campoValor="id" campoLabel="nome_razao" obrigatorio={form.tipo_frete !== 'Sem Frete'} disabled={form.tipo_frete === 'Sem Frete'} />

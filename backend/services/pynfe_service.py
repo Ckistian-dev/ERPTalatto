@@ -1,7 +1,4 @@
-# /services/pynfe_service.py
-
 import os
-# Importa o _fonte_dados, como no exemplo oficial
 from pynfe.entidades.fonte_dados import _fonte_dados
 from pynfe.processamento.comunicacao import ComunicacaoSefaz
 from pynfe.processamento.serializacao import SerializacaoXML
@@ -29,24 +26,26 @@ class PyNFeService:
 
     def emitir_nfe_sincrono(self, nfe_object: NotaFiscal):
         """
-        Executa o fluxo completo: Serializa, Assina e Envia a NF-e de forma síncrona.
+        Executa o fluxo completo: Adiciona ao contexto, Serializa, Assina e Envia.
         """
         try:
-            # 1. Serialização (LÓGICA CORRETA E FINAL)
-            # O construtor recebe o _fonte_dados importado.
-            serializador = SerializacaoXML(_fonte_dados, homologacao=self.homologacao)
-            # O método exportar recebe os documentos a serem serializados.
-            xml_nao_assinado = serializador.exportar(nota_fiscal=[nfe_object,])
-            logger.info("NF-e serializada com sucesso.")
+            # 1. Alimentar a fonte de dados com a nota fiscal
+            _fonte_dados.limpar_dados()
+            _fonte_dados.adicionar_objeto(nfe_object)
 
-            # 2. Assinatura
+            # 2. Serialização
+            serializador = SerializacaoXML(_fonte_dados, homologacao=self.homologacao)
+            xml_nao_assinado = serializador.exportar()
+            logger.info("NF-e serializada com sucesso.")
+            
+            # 3. Assinatura
             xml_assinado = self.assinador.assinar(xml_nao_assinado)
             logger.info("XML assinado com sucesso.")
 
-            # 3. Envio
+            # 4. Envio
             retorno_sefaz = self.comunicacao.autorizacao(modelo='nfe', nota_fiscal=xml_assinado)
             
-            # 4. Tratamento do Retorno
+            # 5. Tratamento do Retorno
             if retorno_sefaz[0] == 0: # Sucesso
                 xml_autorizado = retorno_sefaz[1]
                 logger.info("NF-e autorizada pela SEFAZ.")
@@ -61,6 +60,9 @@ class PyNFeService:
             return 'erro_fatal', str(e)
 
     def gerar_danfe(self, xml_autorizado_etree) -> bytes:
+        """
+        Gera o PDF do DANFE a partir do XML autorizado.
+        """
         try:
             xml_string = etree.tostring(xml_autorizado_etree, encoding='unicode')
             return danfe.Danfe(xml_string=xml_string).emitir()
@@ -69,4 +71,5 @@ class PyNFeService:
             raise e
 
 def get_pynfe_service():
+    """Função para injeção de dependência no FastAPI."""
     return PyNFeService()

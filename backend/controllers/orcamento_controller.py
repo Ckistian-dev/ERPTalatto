@@ -1,28 +1,15 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from fastapi import status
-from typing import Optional
+from typing import Optional, List, Dict
 import os
 import traceback
 import mysql.connector.pooling
 import decimal
-from typing import List
 import json
-from datetime import datetime
-
-def converter_data_para_iso(data_br: str):
-    """Converte uma data string 'DD/MM/AAAA' para 'AAAA-MM-DD'."""
-    if not data_br:
-        return None
-    try:
-        # Converte a string para um objeto datetime e depois para o formato ISO
-        return datetime.strptime(data_br, '%d/%m/%Y').strftime('%Y-%m-%d')
-    except (ValueError, TypeError):
-        # Retorna a data original se o formato for inválido, para evitar quebrar a aplicação
-        return data_br
 
 
-# Pool de conexão MySQL
+# Pool de conexão MySQL (sem alterações)
 pool = mysql.connector.pooling.MySQLConnectionPool(
     pool_name="orcamento_pool",
     pool_size=10,
@@ -36,7 +23,8 @@ pool = mysql.connector.pooling.MySQLConnectionPool(
 
 router = APIRouter()
 
-class ItemOrcamento(BaseModel):
+# Modelos (Itemorcamento, FormaPagamento, orcamentoCreate, etc.) - Sem alterações
+class Itemorcamento(BaseModel):
     produto_id: int
     produto: str
     variacao_id: Optional[str]
@@ -48,40 +36,76 @@ class ItemOrcamento(BaseModel):
 
 class FormaPagamento(BaseModel):
     tipo: str
-    valor_pix: Optional[float] = None
-    valor_boleto: Optional[float] = None
-    valor_dinheiro: Optional[float] = None
-    parcelas: Optional[int] = None
-    valor_parcela: Optional[float] = None
+    valor_pix: Optional[float]
+    valor_boleto: Optional[float]
+    valor_dinheiro: Optional[float]
+    parcelas: Optional[int]
+    valor_parcela: Optional[float]
 
-
-class OrcamentoCreate(BaseModel):
+# ATUALIZADO: Campos renomeados para o padrão do banco
+class orcamentoCreate(BaseModel):
     data_emissao: str
     data_validade: str
-    cliente: int
+    cliente_id: int  # Renomeado de 'cliente'
     cliente_nome: str
-    vendedor: int
+    vendedor_id: int  # Renomeado de 'vendedor'
     vendedor_nome: str
+    transportadora_id: int # Renomeado de 'transportadora'
+    transportadora_nome: Optional[str]
     origem_venda: str
-    lista_itens: List[ItemOrcamento]
+    lista_itens: List[Itemorcamento]
     total: float
     desconto_total: float
     total_com_desconto: float
     tipo_frete: str
-    transportadora: int
-    transportadora_nome: Optional[str]  # 👈 ADICIONE ESSA LINHA!
     valor_frete: float
     formas_pagamento: List[FormaPagamento]
+    data_finalizacao: Optional[str] = None
+    ordem_finalizacao: Optional[float] = None
+    endereco_expedicao: Optional[dict] = None
+    hora_expedicao: Optional[str] = None
+    usuario_expedicao: Optional[str] = None
+    numero_nf: Optional[str] = None
+    data_nf: Optional[str] = None
     observacao: Optional[str]
-    situacao_orcamento: str
+    situacao_pedido: str
+
+
+# ATUALIZADO: Campos renomeados para o padrão do banco
+class orcamentoUpdate(BaseModel):
+    data_emissao: Optional[str] = None
+    data_validade: Optional[str] = None
+    cliente_id: Optional[int] = None # Renomeado
+    cliente_nome: Optional[str] = None
+    vendedor_id: Optional[int] = None # Renomeado
+    vendedor_nome: Optional[str] = None
+    transportadora_id: Optional[int] = None # Renomeado
+    transportadora_nome: Optional[str] = None
+    origem_venda: Optional[str] = None
+    lista_itens: Optional[List[Itemorcamento]] = None
+    total: Optional[float] = None
+    desconto_total: Optional[float] = None
+    total_com_desconto: Optional[float] = None
+    tipo_frete: Optional[str] = None
+    valor_frete: Optional[float] = None
+    formas_pagamento: Optional[List[FormaPagamento]] = None
+    data_finalizacao: Optional[str] = None
+    ordem_finalizacao: Optional[float] = None
+    endereco_expedicao: Optional[dict] = None
+    hora_expedicao: Optional[str] = None
+    usuario_expedicao: Optional[str] = None
+    numero_nf: Optional[str] = None
+    data_nf: Optional[str] = None
+    observacao: Optional[str] = None
+    situacao_pedido: Optional[str] = None
     
     
-class OrcamentoCSV(BaseModel):
+class orcamentoCSV(BaseModel):
     id: Optional[int] = None
-    situacao_orcamento: str
+    situacao_pedido: str
     data_emissao: str
     data_validade: str
-    cliente: Optional[int]
+    cliente_id: Optional[int]
     cliente_nome: Optional[str]
     vendedor: Optional[int]
     vendedor_nome: Optional[str]
@@ -93,45 +117,104 @@ class OrcamentoCSV(BaseModel):
     total: Optional[float] = 0.00
     desconto_total: Optional[float] = 0.00
     total_com_desconto: Optional[float] = 0.00
-    lista_itens: Optional[dict] = {}
-    formas_pagamento: Optional[dict] = {}
+    lista_itens: Optional[Dict] = {}
+    formas_pagamento: Optional[Dict] = {}
     observacao: Optional[str] = None
     criado_em: Optional[str]
 
-class ImportacaoPayloadOrcamento(BaseModel):
-    registros: List[OrcamentoCSV]
+class ImportacaoPayloadorcamento(BaseModel):
+    registros: List[orcamentoCSV]
 
+# ATUALIZADO: Rota de criação para usar os novos nomes de campos
 @router.post("/orcamentos", status_code=status.HTTP_201_CREATED)
-def criar_orcamento(orcamento: OrcamentoCreate):
+def criar_orcamento(orcamento: orcamentoCreate):
+    conn = pool.get_connection()
+    cursor = conn.cursor()
+    try:
+        # Query usa os nomes de coluna corretos, que agora correspondem ao modelo
+        cursor.execute("""
+            INSERT INTO orcamentos (
+                situacao_pedido, data_emissao, data_validade,
+                cliente_id, cliente_nome, vendedor_id, vendedor_nome,
+                origem_venda, tipo_frete, transportadora_id, transportadora_nome,
+                valor_frete, total, desconto_total, total_com_desconto,
+                lista_itens, formas_pagamento, data_finalizacao, ordem_finalizacao, observacao,
+                endereco_expedicao, hora_expedicao, usuario_expedicao,
+                numero_nf, data_nf
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            orcamento.situacao_pedido, orcamento.data_emissao, orcamento.data_validade,
+            orcamento.cliente_id, orcamento.cliente_nome, orcamento.vendedor_id, orcamento.vendedor_nome,
+            orcamento.origem_venda, orcamento.tipo_frete, orcamento.transportadora_id, orcamento.transportadora_nome,
+            decimal.Decimal(str(orcamento.valor_frete or 0.00)),
+            decimal.Decimal(str(orcamento.total or 0.00)),
+            decimal.Decimal(str(orcamento.desconto_total or 0.00)),
+            decimal.Decimal(str(orcamento.total_com_desconto or 0.00)),
+            json.dumps([item.dict() for item in orcamento.lista_itens]),
+            json.dumps([forma.dict() for forma in orcamento.formas_pagamento]),
+            orcamento.data_finalizacao,
+            decimal.Decimal(str(orcamento.ordem_finalizacao)) if orcamento.ordem_finalizacao is not None else None,
+            orcamento.observacao,
+            json.dumps(orcamento.endereco_expedicao) if orcamento.endereco_expedicao else None,
+            orcamento.hora_expedicao, orcamento.usuario_expedicao,
+            orcamento.numero_nf, orcamento.data_nf,
+        ))
+        conn.commit()
+        return {"mensagem": "orcamento criado com sucesso"}
+    except mysql.connector.Error as err:
+        raise HTTPException(status_code=500, detail="Erro no servidor: " + str(err))
+    finally:
+        cursor.close()
+        conn.close()
+
+# ATUALIZADO: Rota de atualização simplificada
+@router.put("/orcamentos/{orcamento_id}")
+def atualizar_orcamento(orcamento_id: int, orcamento_update: orcamentoUpdate):
     conn = pool.get_connection()
     cursor = conn.cursor()
 
+    update_data = orcamento_update.dict(exclude_unset=True)
+
+    if not update_data:
+        raise HTTPException(status_code=400, detail="Nenhum dado fornecido para atualização.")
+
     try:
-        # ✅ CONVERTE AS DATAS ANTES DE USAR
-        data_emissao_iso = converter_data_para_iso(orcamento.data_emissao)
-        data_validade_iso = converter_data_para_iso(orcamento.data_validade)
+        cursor.execute("SELECT id FROM orcamentos WHERE id = %s", (orcamento_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="orcamento não encontrado.")
 
-        cursor.execute("""
-            INSERT INTO orcamentos (
-                situacao_orcamento, data_emissao, data_validade,
-                # ... outros campos
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-            orcamento.situacao_orcamento,
-            data_emissao_iso,      # USA A DATA CONVERTIDA
-            data_validade_iso,     # USA A DATA CONVERTIDA
-            # ... outros valores
-            orcamento.cliente,
-            orcamento.cliente_nome,
-            # ... etc
-        ))
+        set_clauses = []
+        valores = []
+        
+        # REMOVIDO: O dicionário 'campo_para_coluna' não é mais necessário.
 
+        for campo, valor in update_data.items():
+            # O nome do 'campo' agora corresponde diretamente ao nome da 'coluna'
+            set_clauses.append(f"{campo} = %s")
+
+            if campo in ['lista_itens', 'formas_pagamento']:
+                valores.append(json.dumps(valor))
+            elif campo == 'endereco_expedicao':
+                valores.append(json.dumps(valor) if valor else None)
+            elif isinstance(valor, (float, decimal.Decimal)):
+                 valores.append(decimal.Decimal(str(valor)))
+            else:
+                 valores.append(valor)
+
+        if not set_clauses:
+             return {"mensagem": "Nenhum campo para atualizar."}
+
+        query = f"UPDATE orcamentos SET {', '.join(set_clauses)} WHERE id = %s"
+        valores.append(orcamento_id)
+
+        cursor.execute(query, tuple(valores))
         conn.commit()
-        return {"mensagem": "Orçamento criado com sucesso"}
+
+        return {"mensagem": "orcamento atualizado com sucesso."}
 
     except mysql.connector.Error as err:
-        raise HTTPException(status_code=500, detail="Erro no servidor: " + str(err))
+        raise HTTPException(status_code=500, detail=f"Erro ao atualizar orcamento: {str(err)}")
 
     finally:
         cursor.close()
@@ -157,27 +240,58 @@ def listar_orcamentos_paginado(
         offset = (page - 1) * limit
         where_clauses = []
         valores = []
+        
+        # Dicionário para agrupar filtros da mesma coluna
+        filtros_agrupados: Dict[str, List[str]] = {}
 
         colunas_validas = [
-            "id", "situacao_orcamento", "data_emissao", "data_validade",
-            "cliente_nome", "vendedor_nome", "origem_venda", "tipo_frete",
-            "transportadora_nome", "valor_frete", "total", "desconto_total",
-            "total_com_desconto", "criado_em"
+            "id", "situacao_pedido", "data_emissao", "data_validade",
+            "cliente_id", "cliente_nome", "vendedor_id", "vendedor_nome", "origem_venda", "tipo_frete",
+            "transportadora_id", "transportadora_nome", "valor_frete", "total", "desconto_total",
+            "total_com_desconto", "criado_em", "data_finalizacao", "ordem_finalizacao",
+            "hora_expedicao", "usuario_expedicao", "numero_nf", "data_nf"
         ]
 
-        coluna_ordenacao = ordenar_por if ordenar_por in colunas_validas else "id"
+        colunas_ordenacao = ordenar_por.split(",") if ordenar_por else ["id"]
+        colunas_ordenacao = [col.strip() for col in colunas_ordenacao if col.strip() in colunas_validas]
         direcao_ordenacao = "ASC" if ordenar_direcao and ordenar_direcao.lower() == "asc" else "DESC"
+        ordem_sql = ", ".join([f"{col} {direcao_ordenacao}" for col in colunas_ordenacao]) if colunas_ordenacao else "id ASC"
 
         if filtros:
             for par in filtros.split(";"):
                 if ":" in par:
                     coluna, texto = par.split(":", 1)
+                    # Adiciona à lista de filtros agrupados
+                    if coluna not in filtros_agrupados:
+                        filtros_agrupados[coluna] = []
+                    filtros_agrupados[coluna].append(texto)
+
+        # Processa os filtros agrupados
+        for coluna, textos in filtros_agrupados.items():
+            if coluna in colunas_validas: # Garante que a coluna é válida para evitar injeção SQL
+                if len(textos) > 1:
+                    # Se houver múltiplos valores para a mesma coluna, usa OR
+                    or_conditions = []
+                    for texto in textos:
+                        or_conditions.append(f"{coluna} LIKE %s")
+                        valores.append(f"%{texto}%")
+                    where_clauses.append(f"({' OR '.join(or_conditions)})")
+                else:
+                    # Se houver apenas um valor, usa LIKE
                     where_clauses.append(f"{coluna} LIKE %s")
-                    valores.append(f"%{texto}%")
+                    valores.append(f"%{textos[0]}%")
+            else:
+                # Opcional: Logar ou levantar um erro se uma coluna inválida for passada
+                print(f"Aviso: Coluna '{coluna}' no filtro não é válida e será ignorada.")
+
 
         if filtro_rapido_coluna and filtro_rapido_texto:
-            where_clauses.append(f"{filtro_rapido_coluna} LIKE %s")
-            valores.append(f"%{filtro_rapido_texto}%")
+            if filtro_rapido_coluna in colunas_validas:
+                where_clauses.append(f"{filtro_rapido_coluna} LIKE %s")
+                valores.append(f"%{filtro_rapido_texto}%")
+            else:
+                print(f"Aviso: Coluna de filtro rápido '{filtro_rapido_coluna}' não é válida e será ignorada.")
+
 
         if data_inicio:
             where_clauses.append("criado_em >= %s")
@@ -189,15 +303,16 @@ def listar_orcamentos_paginado(
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
         query_total = f"SELECT COUNT(*) as total FROM orcamentos {where_sql}"
-        cursor.execute(query_total, valores)
+        cursor.execute(query_total, valores) # Os valores já contêm todos os parâmetros para as cláusulas WHERE
         total = cursor.fetchone()["total"]
 
         query = f"""
             SELECT * FROM orcamentos
             {where_sql}
-            ORDER BY {coluna_ordenacao} {direcao_ordenacao}
+            ORDER BY {ordem_sql}
             LIMIT %s OFFSET %s
         """
+
         cursor.execute(query, valores + [limit, offset])
         resultados = cursor.fetchall()
 
@@ -207,79 +322,16 @@ def listar_orcamentos_paginado(
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao listar orçamentos paginados: {str(e)}")
+        # Imprime o traceback completo para depuração
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro ao listar orcamentos paginados: {str(e)}")
 
     finally:
         cursor.close()
         conn.close()
-
-
-@router.put("/orcamentos/{orcamento_id}")
-def atualizar_orcamento(orcamento_id: int, orcamento: OrcamentoCreate):
-    conn = pool.get_connection()
-    cursor = conn.cursor()
-
-    try:
-        cursor.execute("SELECT id FROM orcamentos WHERE id = %s", (orcamento_id,))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Orçamento não encontrado.")
-
-        cursor.execute("""
-            UPDATE orcamentos SET
-                situacao_orcamento = %s,
-                data_emissao = %s,
-                data_validade = %s,
-                cliente_id = %s,
-                cliente_nome = %s,
-                vendedor_id = %s,
-                vendedor_nome = %s,
-                origem_venda = %s,
-                tipo_frete = %s,
-                transportadora_id = %s,
-                transportadora_nome = %s,
-                valor_frete = %s,
-                total = %s,
-                desconto_total = %s,
-                total_com_desconto = %s,
-                lista_itens = %s,
-                formas_pagamento = %s,
-                observacao = %s
-            WHERE id = %s
-        """, (
-            orcamento.situacao_orcamento,
-            orcamento.data_emissao,
-            orcamento.data_validade,
-            orcamento.cliente,
-            orcamento.cliente_nome,
-            orcamento.vendedor,
-            orcamento.vendedor_nome,
-            orcamento.origem_venda,
-            orcamento.tipo_frete,
-            orcamento.transportadora,
-            orcamento.transportadora_nome,
-            decimal.Decimal(str(orcamento.valor_frete or 0.00)),
-            decimal.Decimal(str(orcamento.total or 0.00)),
-            decimal.Decimal(str(orcamento.desconto_total or 0.00)),
-            decimal.Decimal(str(orcamento.total_com_desconto or 0.00)),
-            json.dumps([item.dict() for item in orcamento.lista_itens]),
-            json.dumps([forma.dict() for forma in orcamento.formas_pagamento]),
-            orcamento.observacao,
-            orcamento_id
-        ))
-
-        conn.commit()
-        return {"mensagem": "Orçamento atualizado com sucesso."}
-
-    except mysql.connector.Error as err:
-        raise HTTPException(status_code=500, detail="Erro ao atualizar orçamento: " + str(err))
-
-    finally:
-        cursor.close()
-        conn.close()
-
 
 @router.post("/orcamentos/validar_importacao")
-def validar_importacao_orcamento(payload: ImportacaoPayloadOrcamento):
+def validar_importacao_orcamento(payload: ImportacaoPayloadorcamento):
     conn = pool.get_connection()
     cursor = conn.cursor(dictionary=True)
 
@@ -296,11 +348,11 @@ def validar_importacao_orcamento(payload: ImportacaoPayloadOrcamento):
             cliente_nome = (orcamento_dict.get("cliente_nome") or '').strip()
 
             if not cliente_nome:
-                erros.append({"mensagem": "Orçamento sem cliente_nome informado", "orcamento": orcamento})
+                erros.append({"mensagem": "orcamento sem cliente_nome informado", "orcamento": orcamento})
                 continue
 
             cursor.execute("SELECT * FROM orcamentos WHERE cliente_nome = %s AND data_emissao = %s", 
-                           (cliente_nome, orcamento_dict.get("data_emissao")))
+                            (cliente_nome, orcamento_dict.get("data_emissao")))
             existente = cursor.fetchone()
 
             if existente:
@@ -319,9 +371,9 @@ def validar_importacao_orcamento(payload: ImportacaoPayloadOrcamento):
         cursor.close()
         conn.close()
         
-        
+    	
 @router.post("/orcamentos/importar_csv_confirmado")
-def importar_csv_confirmado_orcamento(payload: ImportacaoPayloadOrcamento):
+def importar_csv_confirmado_orcamento(payload: ImportacaoPayloadorcamento):
     print(f"Total de registros recebidos: {len(payload.registros)}")
 
     conn = pool.get_connection()
@@ -343,14 +395,14 @@ def importar_csv_confirmado_orcamento(payload: ImportacaoPayloadOrcamento):
                     data_emissao = orcamento_dict.get("data_emissao")
 
                     cursor.execute("SELECT id FROM orcamentos WHERE cliente_nome = %s AND data_emissao = %s", 
-                                   (cliente_nome, data_emissao))
+                                    (cliente_nome, data_emissao))
                     existente = cursor.fetchone()
 
                     if existente:
                         print(f"Atualizando orçamento ID: {existente['id']}")
                         cursor.execute("""
                             UPDATE orcamentos SET
-                                situacao_orcamento = %s, data_validade = %s,
+                                situacao_pedido = %s, data_validade = %s,
                                 cliente_id = %s, vendedor_id = %s,
                                 vendedor_nome = %s, origem_venda = %s, tipo_frete = %s,
                                 transportadora_id = %s, transportadora_nome = %s,
@@ -358,7 +410,7 @@ def importar_csv_confirmado_orcamento(payload: ImportacaoPayloadOrcamento):
                                 total_com_desconto = %s, lista_itens = %s, formas_pagamento = %s, observacao = %s
                             WHERE id = %s
                         """, (
-                            orcamento_dict.get("situacao_orcamento"), orcamento_dict.get("data_validade"),
+                            orcamento_dict.get("situacao_pedido"), orcamento_dict.get("data_validade"),
                             orcamento_dict.get("cliente"), orcamento_dict.get("vendedor"),
                             orcamento_dict.get("vendedor_nome"), orcamento_dict.get("origem_venda"), orcamento_dict.get("tipo_frete"),
                             orcamento_dict.get("transportadora"), orcamento_dict.get("transportadora_nome"),
@@ -375,14 +427,14 @@ def importar_csv_confirmado_orcamento(payload: ImportacaoPayloadOrcamento):
                         print(f"Inserindo orçamento: {cliente_nome} - {data_emissao}")
                         cursor.execute("""
                             INSERT INTO orcamentos (
-                                situacao_orcamento, data_emissao, data_validade,
+                                situacao_pedido, data_emissao, data_validade,
                                 cliente_id, cliente_nome, vendedor_id, vendedor_nome,
                                 origem_venda, tipo_frete, transportadora_id, transportadora_nome,
                                 valor_frete, total, desconto_total, total_com_desconto,
                                 lista_itens, formas_pagamento, observacao
                             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """, (
-                            orcamento_dict.get("situacao_orcamento"), orcamento_dict.get("data_emissao"),
+                            orcamento_dict.get("situacao_pedido"), orcamento_dict.get("data_emissao"),
                             orcamento_dict.get("data_validade"), orcamento_dict.get("cliente"),
                             cliente_nome, orcamento_dict.get("vendedor"), orcamento_dict.get("vendedor_nome"),
                             orcamento_dict.get("origem_venda"), orcamento_dict.get("tipo_frete"),
@@ -417,13 +469,15 @@ def importar_csv_confirmado_orcamento(payload: ImportacaoPayloadOrcamento):
     finally:
         cursor.close()
         conn.close()
+
         
 @router.get("/orcamentos_dropdown")
 def listar_orcamentos_dropdown(id: Optional[int] = None):
-    conn = pool.get_connection()
-    cursor = conn.cursor(dictionary=True)
-
+    conn = None
+    cursor = None
     try:
+        conn = pool.get_connection()
+        cursor = conn.cursor(dictionary=True)
         if id:
             cursor.execute("SELECT * FROM orcamentos WHERE id = %s", (id,))
             resultado = cursor.fetchone()
@@ -437,10 +491,8 @@ def listar_orcamentos_dropdown(id: Optional[int] = None):
             ORDER BY id DESC
         """)
         return cursor.fetchall()
-
     except mysql.connector.Error as err:
         raise HTTPException(status_code=500, detail=str(err))
-
     finally:
-        cursor.close()
-        conn.close()
+        if cursor: cursor.close()
+        if conn: conn.close()

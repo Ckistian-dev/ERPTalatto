@@ -340,7 +340,7 @@ export default function CadastroGeral({ modo = 'novo' }) {
                                 </div>
                             </div>
                         ) : (
-                            <CampoTextsimples label="Inscrição Estadual (IE)" name="ie" value="Não aplicável" disabled={true} />
+                            <CampoTextsimples label="Inscrição Estadual (IE)" name="ie" value="Não aplicável" disabled={true} onChange={() => {}} />
                         )}
                         <CampoDropdownEditavel label="Situação Cadastral" name="situacao" value={form.situacao} onChange={handleChange} tipo="situacao" usuario={usuario} />
                     </>

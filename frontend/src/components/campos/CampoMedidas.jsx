@@ -3,11 +3,9 @@ export default function CampoMedidas({
   nomeLargura = "largura",
   nomeAltura = "altura",
   nomeComprimento = "comprimento",
-  nomeDiametro = "diametro",
   largura,
   altura,
   comprimento,
-  diametro,
   onChange,
   obrigatorio = false
 }) {
@@ -29,7 +27,7 @@ export default function CampoMedidas({
         {label}
         {obrigatorio && <span className="text-red-600">*</span>}
       </label>
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 h-10">
         <input
           type="text"
           name={nomeLargura}
@@ -52,14 +50,6 @@ export default function CampoMedidas({
           value={comprimento}
           onChange={handleChangeFormatado}
           placeholder="Comprimento (cm)"
-          className="border border-gray-300 px-2 py-1 rounded text-sm"
-        />
-        <input
-          type="text"
-          name={nomeDiametro}
-          value={diametro}
-          onChange={handleChangeFormatado}
-          placeholder="Diâmetro (cm)"
           className="border border-gray-300 px-2 py-1 rounded text-sm"
         />
       </div>

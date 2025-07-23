@@ -149,7 +149,7 @@ export default function CampoData({
         value={valorParaInput || ""} // Usa o valor convertido para YYYY-MM-DD
         onChange={handleChange}
         // placeholder={placeholder} // Placeholder não é muito eficaz em type="date"
-        className="w-full border border-gray-300 p-2 rounded"
+        className="w-full border border-gray-300 p-2 rounded h-10"
       />
     </div>
   );

@@ -46,7 +46,7 @@ class ContaBase(BaseModel):
     nome_cliente_fornecedor: str
     data_emissao: str
     data_vencimento: str
-    data_baixa: str
+    data_baixa: Optional[str] = None
     plano_contas: str
     caixa_destino_origem: str
     observacoes_conta: Optional[str] = None

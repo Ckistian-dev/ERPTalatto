@@ -69,8 +69,8 @@ class PedidoCreate(BaseModel):
     data_nf: Optional[str] = None
     observacao: Optional[str]
     situacao_pedido: str
-    tecnospeed_id: Optional[str] = None
-    tecnospeed_status: Optional[str] = None
+    programacao: Optional[Dict] = None # <-- NOVO CAMPO
+
 
 
 # ATUALIZADO: Campos renomeados para o padrão do banco
@@ -100,8 +100,8 @@ class PedidoUpdate(BaseModel):
     data_nf: Optional[str] = None
     observacao: Optional[str] = None
     situacao_pedido: Optional[str] = None
-    tecnospeed_id: Optional[str] = None # Renomeado
-    tecnospeed_status: Optional[str] = None # Renomeado
+    programacao: Optional[Dict] = None # <-- NOVO CAMPO
+
     
     
 class PedidoCSV(BaseModel):
@@ -144,9 +144,9 @@ def criar_pedido(pedido: PedidoCreate):
                 valor_frete, total, desconto_total, total_com_desconto,
                 lista_itens, formas_pagamento, data_finalizacao, ordem_finalizacao, observacao,
                 endereco_expedicao, hora_expedicao, usuario_expedicao,
-                numero_nf, data_nf, tecnospeed_id, tecnospeed_status
+                numero_nf, data_nf
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             pedido.situacao_pedido, pedido.data_emissao, pedido.data_validade,
             pedido.cliente_id, pedido.cliente_nome, pedido.vendedor_id, pedido.vendedor_nome,
@@ -163,7 +163,6 @@ def criar_pedido(pedido: PedidoCreate):
             json.dumps(pedido.endereco_expedicao) if pedido.endereco_expedicao else None,
             pedido.hora_expedicao, pedido.usuario_expedicao,
             pedido.numero_nf, pedido.data_nf,
-            pedido.tecnospeed_id, pedido.tecnospeed_status
         ))
         conn.commit()
         return {"mensagem": "Pedido criado com sucesso"}
@@ -192,16 +191,12 @@ def atualizar_pedido(pedido_id: int, pedido_update: PedidoUpdate):
         set_clauses = []
         valores = []
         
-        # REMOVIDO: O dicionário 'campo_para_coluna' não é mais necessário.
-
         for campo, valor in update_data.items():
             # O nome do 'campo' agora corresponde diretamente ao nome da 'coluna'
             set_clauses.append(f"{campo} = %s")
 
-            if campo in ['lista_itens', 'formas_pagamento']:
-                valores.append(json.dumps(valor))
-            elif campo == 'endereco_expedicao':
-                valores.append(json.dumps(valor) if valor else None)
+            if campo in ['lista_itens', 'formas_pagamento', 'endereco_expedicao', 'programacao']:
+                valores.append(json.dumps(valor) if valor is not None else None)
             elif isinstance(valor, (float, decimal.Decimal)):
                  valores.append(decimal.Decimal(str(valor)))
             else:
@@ -471,6 +466,81 @@ def importar_csv_confirmado_pedido(payload: ImportacaoPayloadPedido):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro geral ao importar orçamentos: {str(e)}")
 
+    finally:
+        cursor.close()
+        conn.close()
+        
+        
+@router.get("/pedidos/{pedido_id}/analise_estoque")
+def analisar_estoque_para_pedido(pedido_id: int):
+    conn = pool.get_connection()
+    # Usando cursor de dicionário para facilitar o acesso aos campos
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        # 1. Buscar os itens do pedido
+        cursor.execute("SELECT lista_itens FROM pedidos WHERE id = %s", (pedido_id,))
+        pedido = cursor.fetchone()
+        if not pedido or not pedido['lista_itens']:
+            raise HTTPException(status_code=404, detail="Pedido não encontrado ou sem itens.")
+        
+        itens_pedido = json.loads(pedido['lista_itens'])
+        
+        analise_produtos = []
+        
+        for item in itens_pedido:
+            produto_id = item.get('produto_id')
+            quantidade_necessaria = item.get('quantidade_itens', 0)
+            
+            if not produto_id:
+                continue
+
+            # 2. Para cada item, buscar informações do produto e do estoque
+            # Adicionei a busca pela coluna 'permite_estoque_negativo'
+            cursor.execute("SELECT id, descricao, permite_estoque_negativo FROM produtos WHERE id = %s", (produto_id,))
+            produto_info = cursor.fetchone()
+            
+            if not produto_info:
+                # Produto pode não existir mais, trate este caso
+                analise_produtos.append({
+                    "produto_id": produto_id,
+                    "produto_nome": item.get('produto', 'Produto não encontrado'),
+                    "quantidade_necessaria": quantidade_necessaria,
+                    "permite_producao": False,
+                    "estoque_disponivel": [],
+                    "estoque_total": 0
+                })
+                continue
+                
+            # 3. Buscar posições de estoque para o produto
+            # Usando uma query similar à sua rota de estoque, mas no conector mysql
+            cursor.execute("""
+                SELECT 
+                    id_produto, lote, deposito, rua, numero, nivel, cor, 
+                    situacao_estoque, quantidade
+                FROM estoque
+                WHERE id_produto = %s AND quantidade > 0
+            """, (produto_id,))
+            posicoes_estoque = cursor.fetchall()
+
+            estoque_total = sum(p['quantidade'] for p in posicoes_estoque)
+
+            analise_produtos.append({
+                "produto_id": produto_id,
+                "produto_nome": produto_info['descricao'],
+                "quantidade_necessaria": quantidade_necessaria,
+                "permite_producao": produto_info['permite_estoque_negativo'],
+                "estoque_disponivel": posicoes_estoque,
+                "estoque_total": estoque_total
+            })
+            
+        return analise_produtos
+
+    except mysql.connector.Error as err:
+        raise HTTPException(status_code=500, detail=f"Erro de banco de dados: {err}")
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro interno do servidor: {e}")
     finally:
         cursor.close()
         conn.close()

@@ -97,7 +97,7 @@ export default function Listacadastros() {
         if (!usuario || Object.keys(usuario).length === 0) return
         // Configuração de colunas
         const ordemPadrao = [
-            "id", "nome_razao", "fantasia", "cpf_cnpj", "rg_ie", "tipo_pessoa",
+            "id", "nome_razao", "fantasia", "cpf_cnpj", "ie", "tipo_pessoa",
             "tipo_cadastro", "celular", "telefone", "email", "cep", "logradouro",
             "numero", "complemento", "bairro", "cidade", "estado", "regiao",
             "situacao"
