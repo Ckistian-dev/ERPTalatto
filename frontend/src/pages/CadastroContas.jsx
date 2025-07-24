@@ -252,7 +252,6 @@ export default function ContaGeral({ modo = 'novo' }) {
                             tipo="plano_contas_options"
                             usuario={usuario}
                             obrigatorio
-                            colSpan
                             placeholder="Selecione o plano"
                         />
                         <CampoDropdownEditavel

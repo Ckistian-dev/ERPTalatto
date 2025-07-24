@@ -1,14 +1,18 @@
-# app.py
-
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 import os
 from dotenv import load_dotenv
 import urllib3
+
+# IMPORTAÇÕES DO SLOWAPI E DO NOSSO ARQUIVO DE LIMITER
+from slowapi.errors import RateLimitExceeded
+from slowapi import _rate_limit_exceeded_handler
+from core.limiter import limiter
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-
+# ✅ CORREÇÃO: Especifica a codificação UTF-8 para ler o arquivo .env
 load_dotenv()
 
 # --- Importação dos Controladores ---
@@ -35,13 +39,16 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Configuração do estado e do handler usando o limiter importado
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
 # --- Middlewares ---
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
-# Configuração de CORS para permitir a comunicação com o frontend
 origins_str = os.getenv("FRONTEND_URLS", "http://localhost:5173")
 allowed_origins = [origin.strip() for origin in origins_str.split(',')]
-
 
 app.add_middleware(
     CORSMiddleware,
