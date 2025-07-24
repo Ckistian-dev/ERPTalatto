@@ -1,54 +1,47 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import axios from 'axios'
-import ModalErro from '@/components/modals/ModalErro'
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import ModalErro from '@/components/modals/ModalErro';
 
 // Define a URL da API a partir das variáveis de ambiente do Vite
 const API_URL = import.meta.env.VITE_API_BASE_URL;
 
 export default function Login() {
-    const [email, setEmail] = useState('')
-    const [senha, setSenha] = useState('')
-    const [erro, setErro] = useState(null)
-    const navigate = useNavigate()
+    const [email, setEmail] = useState('');
+    const [senha, setSenha] = useState('');
+    const [erro, setErro] = useState(null);
+    const [isLoading, setIsLoading] = useState(false); // 1. NOVO ESTADO PARA CONTROLE DE CARREGAMENTO
+    const navigate = useNavigate();
 
     const handleLogin = async (e) => {
         e.preventDefault();
         setErro(null);
+        setIsLoading(true); // 2. ATIVA O CARREGAMENTO
 
         try {
-            // USO DA VARIÁVEL DE AMBIENTE AQUI
             const response = await axios.post(`${API_URL}/auth/login`, {
                 email,
                 senha,
             });
 
-            // Salva o token e nome
-            localStorage.setItem('token', response.data.access_token);
+            const token = response.data.access_token;
+
+            localStorage.setItem('token', token);
             localStorage.setItem('nome', response.data.nome);
 
-            // Configura o interceptor do Axios para adicionar o token em todas as requisições futuras
-            axios.interceptors.request.use(config => {
-                const token = localStorage.getItem('token');
-                if (token) {
-                    config.headers.Authorization = `Bearer ${token}`;
-                }
-                return config;
-            }, error => {
-                // Lidar com erros de requisição
-                return Promise.reject(error);
-            });
-
+            axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+            
             navigate('/dashboard');
 
         } catch (err) {
-            // Se houver uma resposta do servidor com detalhes de erro
             if (err.response && err.response.data && err.response.data.detail) {
                 setErro(err.response.data.detail);
             } else {
                 setErro('Erro ao fazer login. Verifique sua conexão ou credenciais.');
             }
             console.error("Erro no login:", err);
+        } finally {
+            setIsLoading(false); // 3. DESATIVA O CARREGAMENTO (SEMPRE, COM SUCESSO OU ERRO)
         }
     };
 
@@ -87,6 +80,7 @@ export default function Login() {
                                 onChange={(e) => setEmail(e.target.value)}
                                 className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-400"
                                 required
+                                disabled={isLoading} // Desabilita o input durante o carregamento
                             />
                         </div>
 
@@ -99,15 +93,28 @@ export default function Login() {
                                 onChange={(e) => setSenha(e.target.value)}
                                 className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-400"
                                 required
+                                disabled={isLoading} // Desabilita o input durante o carregamento
                             />
-
                         </div>
 
+                        {/* 4. BOTÃO COM LÓGICA DE CARREGAMENTO */}
                         <button
                             type="submit"
-                            className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition font-semibold"
+                            className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition font-semibold flex items-center justify-center disabled:bg-blue-400 disabled:cursor-not-allowed"
+                            disabled={isLoading}
                         >
-                            Autenticar
+                            {isLoading ? (
+                                <>
+                                    {/* Ícone de Spinner SVG com animação do Tailwind */}
+                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Autenticando...
+                                </>
+                            ) : (
+                                'Autenticar'
+                            )}
                         </button>
                     </form>
 
@@ -122,7 +129,6 @@ export default function Login() {
                             Ckistian Programando Soluções
                         </a>
                     </p>
-
                 </div>
             </div>
 
@@ -131,6 +137,5 @@ export default function Login() {
             }} />
 
         </div>
-
     )
 }

@@ -1,47 +1,57 @@
 // src/context/AuthContext.jsx
+
 import { createContext, useContext, useEffect, useState } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
 
 const AuthContext = createContext();
-
-// A URL base da sua API será puxada de uma variável de ambiente do Vite.
-// Para desenvolvimento local, crie um arquivo .env na raiz do seu projeto frontend:
-// VITE_API_BASE_URL=http://localhost:8000
-// Para produção no Vercel, defina a variável de ambiente no painel do Vercel:
-// VITE_API_BASE_URL=https://erptalatto-production.up.railway.app
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 export function AuthProvider({ children }) {
-  const [usuario, setUsuario] = useState(null);
-  const [carregando, setCarregando] = useState(true);
-  const navigate = useNavigate();
+    const [usuario, setUsuario] = useState(null);
+    const [carregando, setCarregando] = useState(true);
 
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      setCarregando(false);
-      return;
-    }
+    useEffect(() => {
+        const token = localStorage.getItem("token");
+        if (!token) {
+            setCarregando(false);
+            return;
+        }
 
-    // Usar a variável API_BASE_URL aqui
-    axios.get(`${API_BASE_URL}/auth/usuario-logado`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(res => setUsuario(res.data))
-      .catch((error) => {
-        console.error("Erro ao verificar sessão do usuário:", error);
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        axios.get(`${API_BASE_URL}/auth/usuario-logado`)
+            .then(res => setUsuario(res.data))
+            .catch(() => {
+                localStorage.removeItem("token");
+                delete axios.defaults.headers.common['Authorization'];
+                setUsuario(null);
+            })
+            .finally(() => setCarregando(false));
+    }, []);
+
+    // ✅ FUNÇÃO DE LOGIN ADICIONADA
+    const login = async (email, senha) => {
+        const response = await axios.post(`${API_BASE_URL}/auth/login`, { email, senha });
+        const { access_token, ...dadosUsuario } = response.data;
+
+        localStorage.setItem('token', access_token);
+        axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+        setUsuario(dadosUsuario); // ATUALIZA O ESTADO DO CONTEXTO
+    };
+
+    // ✅ FUNÇÃO DE LOGOUT ADICIONADA
+    const logout = () => {
         localStorage.removeItem("token");
-        navigate("/login");
-      })
-      .finally(() => setCarregando(false));
-  }, [navigate]);
+        delete axios.defaults.headers.common['Authorization'];
+        setUsuario(null);
+    };
 
-  return (
-    <AuthContext.Provider value={{ usuario, setUsuario, carregando }}>
-      {children}
-    </AuthContext.Provider>
-  );
+    const value = { usuario, carregando, login, logout };
+
+    return (
+        <AuthContext.Provider value={value}>
+            {children}
+        </AuthContext.Provider>
+    );
 }
 
 export const useAuth = () => useContext(AuthContext);

@@ -1,12 +1,10 @@
-// /App.jsx
-
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ToastContainer } from 'react-toastify';
 import { AuthProvider } from '@/context/AuthContext';
 import 'react-toastify/dist/ReactToastify.css';
 
 import PrivateRoute from "./components/PrivateRoute";
-import LayoutDashboard from './components/LayoutDashboard'; // Nome do componente de Layout atualizado
+import LayoutDashboard from './components/LayoutDashboard';
 
 // Importe suas páginas
 import Login from "./pages/Login";
@@ -31,55 +29,59 @@ import ConsultaNFE from "./pages/ConsultaNFE";
 import ConsultaEstoque from "./pages/estoque/ConsultaEstoque";
 import CadastroPosicaoEstoque from "./pages/estoque/CadastroPosicaoEstoque";
 import SaidaEstoque from "./pages/estoque/SaidaEstoque";
-import InfoEmpresaPage from "./pages/InfoEmpresaPage"; // Nome da página de empresa atualizado
-import RegrasTributariasPage from "./pages/RegrasTributariasPage"; // <-- NOVA IMPORTAÇÃO
-import RegrasEmbalagem from "./pages/embalagem/RegrasEmbalagem"; // <-- NOVA IMPORTAÇÃO
-import ListaLogicasEmbalagem from "./pages/embalagem/ListaLogicasEmbalagem"; // <-- NOVA IMPORTAÇÃO
-import CotacaoIntelipost from "./pages/intelipost/CotacaoIntelipost"; // <-- NOVA IMPORTAÇÃO
+import InfoEmpresaPage from "./pages/InfoEmpresaPage";
+import RegrasTributariasPage from "./pages/RegrasTributariasPage";
+import RegrasEmbalagem from "./pages/embalagem/RegrasEmbalagem";
+import ListaLogicasEmbalagem from "./pages/embalagem/ListaLogicasEmbalagem";
+import CotacaoIntelipost from "./pages/intelipost/CotacaoIntelipost";
 
 function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
         <Routes>
+          {/* Rota pública para a página de login */}
           <Route path="/login" element={<Login />} />
+
+          {/* Rota pai protegida. Se o usuário não estiver logado, será redirecionado. */}
+          {/* Todas as rotas filhas abaixo herdam essa proteção. */}
           <Route path="/" element={<PrivateRoute><LayoutDashboard /></PrivateRoute>}>
-            <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
-            <Route path="/cadastros" element={<PrivateRoute><ListarCadastros /></PrivateRoute>} />
-            <Route path="/cadastros/novo" element={<PrivateRoute><CadastroGeral /></PrivateRoute>} />
-            <Route path="/cadastros/editar" element={<PrivateRoute><CadastroGeral modo="editar" /></PrivateRoute>} />
-            <Route path="/produtos" element={<PrivateRoute><ListarProdutos /></PrivateRoute>} />
-            <Route path="/produtos/novo" element={<PrivateRoute><CadastroProdutos /></PrivateRoute>} />
-            <Route path="/produtos/editar" element={<PrivateRoute><CadastroProdutos modo="editar" /></PrivateRoute>} />
-            <Route path="/orcamentos" element={<PrivateRoute><ListarOrcamento /></PrivateRoute>} />
-            <Route path="/orcamentos/novo" element={<PrivateRoute><CadastroOrcamento /></PrivateRoute>} />
-            <Route path="/orcamentos/editar" element={<PrivateRoute><CadastroOrcamento modo="editar" /></PrivateRoute>} />
-            <Route path="/pedidos" element={<PrivateRoute><ListarPedidos/></PrivateRoute>} />
-            <Route path="/pedidos/novo" element={<PrivateRoute><CadastroPedidos/></PrivateRoute>} />
-            <Route path="/pedidos/editar" element={<PrivateRoute><CadastroPedidos modo="editar"/></PrivateRoute>} />
-            <Route path="/pedidos/aprovacao" element={<PrivateRoute><AprovarPedido/></PrivateRoute>} />
-            <Route path="/pedidos/programacao" element={<PrivateRoute><ProgramarPedido/></PrivateRoute>} />
-            <Route path="/pedidos/producao" element={<PrivateRoute><ProduzirPedido/></PrivateRoute>} />
-            <Route path="/pedidos/embalagem" element={<PrivateRoute><EmbalarPedido/></PrivateRoute>} /> 
-            <Route path="/pedidos/faturamento" element={<PrivateRoute><FaturarPedido/></PrivateRoute>} />
-            <Route path="/pedidos/expedicao" element={<PrivateRoute><ExpedirPedido/></PrivateRoute>} />
-            <Route path="/financeiro/criar" element={<PrivateRoute><CadastroContas/></PrivateRoute>} />
-            <Route path="/financeiro/editar" element={<PrivateRoute><CadastroContas modo="editar"/></PrivateRoute>} />
-            <Route path="/financeiro/receber" element={<PrivateRoute><ListarContas filtro="receber" /></PrivateRoute>} />
-            <Route path="/financeiro/pagar" element={<PrivateRoute><ListarContas filtro="pagar" /></PrivateRoute>} />
-            <Route path="/notas" element={<PrivateRoute><ConsultaNFE/></PrivateRoute>} />
-            <Route path="/estoque" element={<PrivateRoute><ConsultaEstoque /></PrivateRoute>} />
-            <Route path="/estoque/entrada" element={<PrivateRoute><CadastroPosicaoEstoque /></PrivateRoute>} />
-            <Route path="/estoque/editar" element={<PrivateRoute><CadastroPosicaoEstoque modo="editar" /></PrivateRoute>} />
-            <Route path="/estoque/saida" element={<PrivateRoute><SaidaEstoque /></PrivateRoute>} />
-            <Route path="/empresa/dados" element={<PrivateRoute><InfoEmpresaPage /></PrivateRoute>} />
-            <Route path="/embalagem/novo" element={<PrivateRoute><RegrasEmbalagem /></PrivateRoute>} />
-            <Route path="/embalagem/editar" element={<PrivateRoute><RegrasEmbalagem modo="editar"/></PrivateRoute>} />
-            <Route path="/embalagem" element={<PrivateRoute><ListaLogicasEmbalagem /></PrivateRoute>} />
-            <Route path="/intelipost/cotacao" element={<PrivateRoute><CotacaoIntelipost /></PrivateRoute>} />
             
-            {/* --- NOVA ROTA ADICIONADA --- */}
-            <Route path="/regras-tributarias" element={<PrivateRoute><RegrasTributariasPage /></PrivateRoute>} />
+            {/* As rotas filhas não precisam mais do PrivateRoute */}
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/cadastros" element={<ListarCadastros />} />
+            <Route path="/cadastros/novo" element={<CadastroGeral />} />
+            <Route path="/cadastros/editar" element={<CadastroGeral modo="editar" />} />
+            <Route path="/produtos" element={<ListarProdutos />} />
+            <Route path="/produtos/novo" element={<CadastroProdutos />} />
+            <Route path="/produtos/editar" element={<CadastroProdutos modo="editar" />} />
+            <Route path="/orcamentos" element={<ListarOrcamento />} />
+            <Route path="/orcamentos/novo" element={<CadastroOrcamento />} />
+            <Route path="/orcamentos/editar" element={<CadastroOrcamento modo="editar" />} />
+            <Route path="/pedidos" element={<ListarPedidos />} />
+            <Route path="/pedidos/novo" element={<CadastroPedidos />} />
+            <Route path="/pedidos/editar" element={<CadastroPedidos modo="editar" />} />
+            <Route path="/pedidos/aprovacao" element={<AprovarPedido />} />
+            <Route path="/pedidos/programacao" element={<ProgramarPedido />} />
+            <Route path="/pedidos/producao" element={<ProduzirPedido />} />
+            <Route path="/pedidos/embalagem" element={<EmbalarPedido />} />
+            <Route path="/pedidos/faturamento" element={<FaturarPedido />} />
+            <Route path="/pedidos/expedicao" element={<ExpedirPedido />} />
+            <Route path="/financeiro/criar" element={<CadastroContas />} />
+            <Route path="/financeiro/editar" element={<CadastroContas modo="editar" />} />
+            <Route path="/financeiro/receber" element={<ListarContas filtro="receber" />} />
+            <Route path="/financeiro/pagar" element={<ListarContas filtro="pagar" />} />
+            <Route path="/notas" element={<ConsultaNFE />} />
+            <Route path="/estoque" element={<ConsultaEstoque />} />
+            <Route path="/estoque/entrada" element={<CadastroPosicaoEstoque />} />
+            <Route path="/estoque/editar" element={<CadastroPosicaoEstoque modo="editar" />} />
+            <Route path="/estoque/saida" element={<SaidaEstoque />} />
+            <Route path="/empresa/dados" element={<InfoEmpresaPage />} />
+            <Route path="/embalagem/novo" element={<RegrasEmbalagem />} />
+            <Route path="/embalagem/editar" element={<RegrasEmbalagem modo="editar" />} />
+            <Route path="/embalagem" element={<ListaLogicasEmbalagem />} />
+            <Route path="/intelipost/cotacao" element={<CotacaoIntelipost />} />
+            <Route path="/regras-tributarias" element={<RegrasTributariasPage />} />
 
           </Route>
         </Routes>
