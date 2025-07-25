@@ -28,6 +28,10 @@ export default function LayoutDashboard() {
       '/cadastros': 'listagem',
       '/cadastros/novo': 'geral',
       '/produtos': 'listagem',
+      '/embalagem': 'listagem',
+      '/usuario': 'listagem',
+      '/embalagem/novo': 'geral',
+      '/usuario/novo': 'geral',
       '/produtos/novo': 'geral',
       '/orcamentos': 'orcamentos',
       '/pedidos': 'pedidos',
@@ -78,10 +82,10 @@ export default function LayoutDashboard() {
         <nav className="space-y-2">
             <SidebarItem icone={<FaHome />} titulo="Dashboard" aberto={menuAberto === 'dashboard'} toggle={() => toggleMenu('dashboard')} submenu={[]} sidebarAberta={sidebarAberta} links={["/dashboard"]} location={location} exact />
             {verificarPermissao(usuario, ['admin', 'vendedor', 'visitante']) && (
-                <SidebarItem icone={<FaUserFriends />} titulo="Cadastros" aberto={menuAberto === 'geral'} toggle={() => toggleMenu('geral')} submenu={["Geral", "Produtos", "Usuários", "Embalagem"]} sidebarAberta={sidebarAberta} links={["/cadastros/novo", "/produtos/novo", "usuario/novo", "embalagem/novo"]} location={location} />
+                <SidebarItem icone={<FaUserFriends />} titulo="Cadastros" aberto={menuAberto === 'geral'} toggle={() => toggleMenu('geral')} submenu={["Geral", "Produtos", "Usuários", "Embalagem"]} sidebarAberta={sidebarAberta} links={["/cadastros/novo", "/produtos/novo", "/usuario/novo", "/embalagem/novo"]} location={location} />
             )}
             {verificarPermissao(usuario, ['admin', 'vendedor', 'financeiro', 'visitante']) && (
-                <SidebarItem icone={<FaBoxOpen />} titulo="Listagem" aberto={menuAberto === 'listagem'} toggle={() => toggleMenu('listagem')} submenu={["Cadastros", "Produtos", "Usuários", "Embalagens"]} sidebarAberta={sidebarAberta} links={["/cadastros", "/produtos", "/usuario", "/embalagem"]} location={location} exclude={['/cadastros/novo', '/produtos/novo', "usuario/novo",  '/embalagem/novo']} />
+                <SidebarItem icone={<FaBoxOpen />} titulo="Listagem" aberto={menuAberto === 'listagem'} toggle={() => toggleMenu('listagem')} submenu={["Cadastros", "Produtos", "Usuários", "Embalagens"]} sidebarAberta={sidebarAberta} links={["/cadastros", "/produtos", "/usuario", "/embalagem"]} location={location} exclude={['/cadastros/novo', '/produtos/novo', "/usuario/novo",  '/embalagem/novo']} />
             )}
             {verificarPermissao(usuario, ['admin', 'vendedor', 'visitante']) && (
                 <SidebarItem icone={<FaFileInvoiceDollar />} titulo="Orçamentos" aberto={menuAberto === 'orcamentos'} toggle={() => toggleMenu('orcamentos')} submenu={["Novo Orçamento", "Histórico"]} sidebarAberta={sidebarAberta} links={["/orcamentos/novo", "/orcamentos"]} location={location} />
