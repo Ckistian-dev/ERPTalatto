@@ -34,6 +34,8 @@ import RegrasTributariasPage from "./pages/RegrasTributariasPage";
 import RegrasEmbalagem from "./pages/embalagem/RegrasEmbalagem";
 import ListaLogicasEmbalagem from "./pages/embalagem/ListaLogicasEmbalagem";
 import CotacaoIntelipost from "./pages/intelipost/CotacaoIntelipost";
+import CadastroUsuario from "./pages/usuario/CadastroUsuario";
+import ListaUsuarios from "./pages/usuario/ListaUsuarios";
 
 function App() {
   return (
@@ -82,6 +84,9 @@ function App() {
             <Route path="/embalagem" element={<ListaLogicasEmbalagem />} />
             <Route path="/intelipost/cotacao" element={<CotacaoIntelipost />} />
             <Route path="/regras-tributarias" element={<RegrasTributariasPage />} />
+            <Route path="/usuario/novo" element={<CadastroUsuario />} />
+            <Route path="/usuario/editar" element={<CadastroUsuario modo="editar"/>} />
+            <Route path="/usuario" element={<ListaUsuarios />} />
 
           </Route>
         </Routes>

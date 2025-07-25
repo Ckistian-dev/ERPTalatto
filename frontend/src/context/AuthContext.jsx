@@ -1,5 +1,3 @@
-// src/context/AuthContext.jsx
-
 import { createContext, useContext, useEffect, useState } from 'react';
 import axios from 'axios';
 
@@ -19,28 +17,32 @@ export function AuthProvider({ children }) {
 
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
         axios.get(`${API_BASE_URL}/auth/usuario-logado`)
-            .then(res => setUsuario(res.data))
+            .then(res => {
+                setUsuario(res.data);
+                localStorage.setItem('nome', res.data.nome); // ⬅️ SALVA O NOME AO RECARREGAR
+            })
             .catch(() => {
                 localStorage.removeItem("token");
+                localStorage.removeItem("nome"); // ⬅️ REMOVE O NOME SE O TOKEN FOR INVÁLIDO
                 delete axios.defaults.headers.common['Authorization'];
                 setUsuario(null);
             })
             .finally(() => setCarregando(false));
     }, []);
 
-    // ✅ FUNÇÃO DE LOGIN ADICIONADA
     const login = async (email, senha) => {
         const response = await axios.post(`${API_BASE_URL}/auth/login`, { email, senha });
         const { access_token, ...dadosUsuario } = response.data;
 
         localStorage.setItem('token', access_token);
+        localStorage.setItem('nome', dadosUsuario.nome); // ⬅️ SALVA O NOME NO LOCALSTORAGE
         axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
-        setUsuario(dadosUsuario); // ATUALIZA O ESTADO DO CONTEXTO
+        setUsuario(dadosUsuario);
     };
 
-    // ✅ FUNÇÃO DE LOGOUT ADICIONADA
     const logout = () => {
         localStorage.removeItem("token");
+        localStorage.removeItem("nome"); // ⬅️ REMOVE O NOME DO LOCALSTORAGE
         delete axios.defaults.headers.common['Authorization'];
         setUsuario(null);
     };

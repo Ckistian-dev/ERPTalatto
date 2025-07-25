@@ -30,7 +30,8 @@ from controllers import (
     estoque_controller,
     empresa_controller,
     regras_controller,
-    embalagem_controller
+    embalagem_controller,
+    usuarios_controller
 )
 
 app = FastAPI(
@@ -62,6 +63,7 @@ app.add_middleware(
 app.include_router(auth_controller.router, prefix="/auth", tags=["auth"])
 app.include_router(empresa_controller.router, prefix="/api")
 app.include_router(regras_controller.router, prefix="/api")
+app.include_router(usuarios_controller.router)
 app.include_router(embalagem_controller.router) 
 app.include_router(dashboard_controller.router) 
 app.include_router(cnpj_controller.router)
