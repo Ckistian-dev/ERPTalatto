@@ -277,6 +277,7 @@ def listar_produtos_dropdown():
             """
             SELECT 
                 id,
+                sku, 
                 descricao,
                 JSON_UNQUOTE(JSON_EXTRACT(url_imagem, '$[0]')) AS url_imagem
             FROM produtos
@@ -290,7 +291,8 @@ def listar_produtos_dropdown():
 
     finally:
         cursor.close()
-        conn.close()
+        if conn:
+            conn.close()
 
 @router.get("/variacoes_por_produto")
 def listar_variacoes(produto_id: int):

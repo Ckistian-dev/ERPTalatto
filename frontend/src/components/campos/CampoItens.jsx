@@ -10,13 +10,15 @@ export default function CampoItens({
     itens,
     setItens,
     precosDisponiveis,
-    API_URL 
+    API_URL
 }) {
     const [editandoIndex, setEditandoIndex] = useState(null);
     const baseUrl = API_URL || import.meta.env.VITE_API_BASE_URL;
 
     const handleChange = (e) => {
-        const { name, value, label, formatado } = e.target;
+        // Assumimos que o componente CampoDropdownDb pode passar o objeto completo 
+        // do item selecionado no evento, como `e.target.item`.
+        const { name, value, label, formatado, item } = e.target;
         setForm((prev) => {
             const novoForm = { ...prev };
             if (formatado !== undefined) {
@@ -25,7 +27,10 @@ export default function CampoItens({
                 novoForm[name] = value;
             }
             if (label !== undefined) {
-                if (name === "produto_selecionado") novoForm.produto_selecionado_nome = label;
+                if (name === "produto_selecionado") {
+                    novoForm.produto_selecionado_nome = label;
+                    novoForm.produto_selecionado_sku = item?.sku || ""; // MODIFICAÇÃO: Adicionando o SKU ao form
+                }
                 if (name === "variacao_selecionada") novoForm.variacao_selecionada_nome = label;
                 if (name === "tabela_preco_selecionada") novoForm.tabela_preco_selecionada_nome = label;
                 if (name === "cliente") novoForm.cliente_nome = label;
@@ -45,7 +50,6 @@ export default function CampoItens({
 
     const calcularTotal = (lista) => {
         const itensComTotaisAtualizados = lista.map(item => {
-            // CORREÇÃO 1: Passar apenas o argumento necessário para a função.
             const precoUnitario = getPrecoUnitario(item.tabela_preco_id);
             const subtotal = precoUnitario * (Number(item.quantidade_itens) || 0);
             return {
@@ -63,6 +67,7 @@ export default function CampoItens({
             ...prevForm,
             produto_selecionado: "",
             produto_selecionado_nome: "",
+            produto_selecionado_sku: "", // MODIFICAÇÃO: Limpar SKU
             variacao_selecionada: "",
             variacao_selecionada_nome: "",
             quantidade_itens: 1,
@@ -83,7 +88,6 @@ export default function CampoItens({
             return toast.error("A quantidade deve ser maior que zero.");
         }
 
-        // CORREÇÃO 2: Passar apenas o argumento necessário para a função.
         const precoUnitario = getPrecoUnitario(form.tabela_preco_selecionada);
         if (precoUnitario <= 0) {
             return toast.error("Preço unitário do produto não encontrado ou é zero.");
@@ -92,6 +96,7 @@ export default function CampoItens({
 
         const novoItem = {
             produto_id: form.produto_selecionado,
+            sku: form.produto_selecionado_sku || "", // MODIFICAÇÃO: Adicionando SKU ao item
             produto: form.produto_selecionado_nome || "Produto",
             variacao_id: form.variacao_selecionada,
             variacao: form.variacao_selecionada_nome || "",
@@ -117,11 +122,7 @@ export default function CampoItens({
         limparFormulario();
         setEditandoIndex(null);
 
-        if (editandoIndex !== null) {
-            toast.success("Item editado!");
-        } else {
-            toast.success("Item adicionado!");
-        }
+        toast.success(editandoIndex !== null ? "Item editado!" : "Item adicionado!");
     };
 
     const handleEditarItem = (index) => {
@@ -130,6 +131,7 @@ export default function CampoItens({
             ...prev,
             produto_selecionado: item.produto_id || "",
             produto_selecionado_nome: item.produto || "",
+            produto_selecionado_sku: item.sku || "", // MODIFICAÇÃO: Preenchendo o SKU para edição
             variacao_selecionada: item.variacao_id || "",
             variacao_selecionada_nome: item.variacao || "",
             quantidade_itens: item.quantidade_itens || 1,
@@ -168,6 +170,8 @@ export default function CampoItens({
                 campoValor="id"
                 campoLabel="descricao"
                 campoImagem="url_imagem"
+                // Garanta que este componente passe o objeto inteiro no 'onChange',
+                // por exemplo: onChange({ target: { ..., item: itemCompleto } })
             />
             <CampoNumSetas
                 label="Quantidade de Itens"
@@ -205,6 +209,8 @@ export default function CampoItens({
                 </button>
             </div>
             {itens.length > 0 && (
+                // O componente TabelaItensAdicionados agora receberá itens com a propriedade 'sku'.
+                // Você precisará ajustar este componente para exibir essa nova coluna.
                 <TabelaItensAdicionados itens={itens} onEditar={handleEditarItem} onExcluir={handleExcluirItem} />
             )}
         </div>
