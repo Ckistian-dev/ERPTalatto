@@ -122,7 +122,7 @@ export default function LayoutDashboard() {
             <SidebarItem icone={<FaTruck />} titulo="Intelipost" aberto={menuAberto === 'intelipost'} toggle={() => toggleMenu('intelipost')} submenu={["Configuração", "Dashboard", "Cotação"]} sidebarAberta={sidebarAberta} links={["/intelipost/config", "/intelipost/dashboard", "/intelipost/cotacao"]} location={location} />
           )}
           {verificarPermissao(usuario, ['admin']) && (
-            <SidebarItem icone={<FaStore />} titulo="Integrações" aberto={menuAberto === 'integracoes'} toggle={() => toggleMenu('integracoes')} submenu={["Mercao Livre", "Tray"]} sidebarAberta={sidebarAberta} links={["/integracoes/mercado-livre", "/integracoes/tray"]} location={location} />
+            <SidebarItem icone={<FaStore />} titulo="Integrações" aberto={menuAberto === 'integracoes'} toggle={() => toggleMenu('integracoes')} submenu={["Mercado Livre", "Tray"]} sidebarAberta={sidebarAberta} links={["/integracoes/mercadolivre", "/integracoes/tray"]} location={location} />
           )}
         </nav>
       </aside>

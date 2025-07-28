@@ -36,6 +36,7 @@ import ListaLogicasEmbalagem from "./pages/embalagem/ListaLogicasEmbalagem";
 import CotacaoIntelipost from "./pages/intelipost/CotacaoIntelipost";
 import CadastroUsuario from "./pages/usuario/CadastroUsuario";
 import ListaUsuarios from "./pages/usuario/ListaUsuarios";
+import IntegracaoMercadoLivrePage from './pages/IntegracaoMercadoLivrePage';
 
 function App() {
   return (
@@ -87,6 +88,7 @@ function App() {
             <Route path="/usuario/novo" element={<CadastroUsuario />} />
             <Route path="/usuario/editar" element={<CadastroUsuario modo="editar"/>} />
             <Route path="/usuario" element={<ListaUsuarios />} />
+            <Route path="/integracoes/mercadolivre" element={<IntegracaoMercadoLivrePage />} />
 
           </Route>
         </Routes>
