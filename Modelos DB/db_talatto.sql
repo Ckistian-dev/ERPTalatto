@@ -219,6 +219,35 @@ INSERT INTO `info_empresa` VALUES (1,'29987353000109','TALATTO INDUSTRIA E COMER
 UNLOCK TABLES;
 
 --
+-- Table structure for table `meli_credentials`
+--
+
+DROP TABLE IF EXISTS `meli_credentials`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `meli_credentials` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `user_id` bigint NOT NULL,
+  `access_token` varchar(255) NOT NULL,
+  `refresh_token` varchar(255) NOT NULL,
+  `expires_in` int NOT NULL,
+  `last_updated` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `user_id` (`user_id`),
+  KEY `idx_user_id` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `meli_credentials`
+--
+
+LOCK TABLES `meli_credentials` WRITE;
+/*!40000 ALTER TABLE `meli_credentials` DISABLE KEYS */;
+/*!40000 ALTER TABLE `meli_credentials` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
 -- Table structure for table `opcoes`
 --
 
@@ -535,4 +564,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2025-07-25 10:54:50
+-- Dump completed on 2025-07-28  9:54:15
