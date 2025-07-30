@@ -111,7 +111,7 @@ export default function Login() {
                     <p className="text-center text-xs text-gray-400 mt-10">
                         Desenvolvido por{" "}
                         <a
-                            href="https://ckistian-dev.github.io/CkistianProgramandoSolucoes/"
+                            href="https://ckistian-programando-solucoes.vercel.app/"
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-slate-700 font-semibold hover:underline"

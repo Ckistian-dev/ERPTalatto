@@ -83,7 +83,7 @@ function App() {
             <Route path="/embalagem/novo" element={<RegrasEmbalagem />} />
             <Route path="/embalagem/editar" element={<RegrasEmbalagem modo="editar" />} />
             <Route path="/embalagem" element={<ListaLogicasEmbalagem />} />
-            <Route path="/intelipost/cotacao" element={<CotacaoIntelipost />} />
+            <Route path="/integracoes/intelipost" element={<CotacaoIntelipost />} />
             <Route path="/regras-tributarias" element={<RegrasTributariasPage />} />
             <Route path="/usuario/novo" element={<CadastroUsuario />} />
             <Route path="/usuario/editar" element={<CadastroUsuario modo="editar"/>} />

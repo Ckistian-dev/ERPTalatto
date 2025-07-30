@@ -31,10 +31,15 @@ from controllers import (
     empresa_controller,
     regras_controller,
     embalagem_controller,
-    usuarios_controller,
+    usuarios_controller
+)
+
+# --- Importação dos Controladores ---
+from controllers.mercadolivre import (
     mercadolivre_controller,
+    mercadolivre_gerenciador_controller,
     mercadolivre_webhooks_controller,
-    mercadolivre_gerenciador_controller
+    configuracoes_controller
 )
 
 app = FastAPI(
@@ -66,9 +71,6 @@ app.add_middleware(
 app.include_router(auth_controller.router, prefix="/auth", tags=["auth"])
 app.include_router(empresa_controller.router, prefix="/api")
 app.include_router(regras_controller.router, prefix="/api")
-app.include_router(mercadolivre_controller.router)
-app.include_router(mercadolivre_gerenciador_controller.router)
-app.include_router(mercadolivre_webhooks_controller.router)
 app.include_router(usuarios_controller.router)
 app.include_router(embalagem_controller.router) 
 app.include_router(dashboard_controller.router) 
@@ -81,6 +83,13 @@ app.include_router(pedidos_controller.router)
 app.include_router(nfe_controller.router)
 app.include_router(contas_controller.router)
 app.include_router(estoque_controller.router)
+
+# --- Inclusão das Rotas dos Controladores (Mercado Livre) ---
+app.include_router(configuracoes_controller.router)
+app.include_router(mercadolivre_controller.router)
+app.include_router(mercadolivre_gerenciador_controller.router)
+app.include_router(mercadolivre_webhooks_controller.router)
+
 
 @app.get("/", tags=["Root"])
 def read_root():

@@ -4,27 +4,20 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+from typing import Optional
 
-# Importa o modelo de dados para interagir com o banco
 from models.mercadolivre_model import MeliCredentials
 
-# Carrega as variáveis de ambiente necessárias para a renovação de token
 load_dotenv()
 MELI_APP_ID = os.getenv("MELI_APP_ID")
 MELI_CLIENT_SECRET = os.getenv("MELI_CLIENT_SECRET")
 
-
 class MeliAPIService:
-    """
-    Camada de serviço para centralizar todas as interações com a API do Mercado Livre.
-    Gerencia automaticamente a validação e renovação de tokens de acesso.
-    """
+    # ... (__init__ e os outros métodos permanecem inalterados) ...
     def __init__(self, user_id: int, db: Session):
         self.db = db
         self.user_id = user_id
         self.base_url = "https://api.mercadolibre.com"
-
-        # Ao instanciar o serviço, busca imediatamente as credenciais do usuário
         self.credentials = db.query(MeliCredentials).filter(MeliCredentials.user_id == self.user_id).first()
         if not self.credentials:
             raise HTTPException(
@@ -33,61 +26,32 @@ class MeliAPIService:
             )
 
     async def _refresh_token(self):
-        """
-        Método privado que encapsula a lógica de renovação de token.
-        """
         print(f"Token para o user_id {self.user_id} expirado. Tentando renovar...")
         token_url = f"{self.base_url}/oauth/token"
-        payload = {
-            "grant_type": "refresh_token",
-            "client_id": MELI_APP_ID,
-            "client_secret": MELI_CLIENT_SECRET,
-            "refresh_token": self.credentials.refresh_token,
-        }
-
+        payload = { "grant_type": "refresh_token", "client_id": MELI_APP_ID, "client_secret": MELI_CLIENT_SECRET, "refresh_token": self.credentials.refresh_token, }
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(token_url, data=payload)
                 response.raise_for_status()
                 token_data = response.json()
-
-            # Atualiza o objeto de credenciais em memória e no banco
             self.credentials.access_token = token_data['access_token']
             self.credentials.refresh_token = token_data['refresh_token']
             self.credentials.expires_in = token_data['expires_in']
-            
             self.db.commit()
             self.db.refresh(self.credentials)
             print(f"Token para o user_id {self.user_id} foi renovado com sucesso.")
         except httpx.HTTPStatusError as e:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Não foi possível renovar o token. O usuário pode ter revogado o acesso. Erro: {e.response.json()}"
-            )
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Não foi possível renovar o token. O usuário pode ter revogado o acesso. Erro: {e.response.json()}")
 
     async def _get_auth_header(self) -> dict:
-        """
-        Verifica a validade do token e o renova se necessário antes de retornar o cabeçalho de autorização.
-        """
-        # Adiciona uma margem de segurança de 60 segundos para evitar usar um token no último segundo de vida
         expiration_time = self.credentials.last_updated + timedelta(seconds=self.credentials.expires_in - 60)
-        
-        # Compara com o tempo atual (com o mesmo fuso horário)
         if datetime.now(expiration_time.tzinfo) >= expiration_time:
             await self._refresh_token()
-        
         return {"Authorization": f"Bearer {self.credentials.access_token}"}
 
-    # --- Métodos Públicos para Interagir com a API ---
-
     async def get_user_info(self) -> dict:
-        """
-        Busca as informações do usuário autenticado ('/users/me').
-        """
-        # Sempre obtém o cabeçalho antes de cada chamada, garantindo um token válido
         auth_header = await self._get_auth_header()
         url = f"{self.base_url}/users/me"
-        
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(url, headers=auth_header)
@@ -96,18 +60,215 @@ class MeliAPIService:
         except httpx.HTTPStatusError as e:
             raise HTTPException(status_code=e.response.status_code, detail=f"Erro na API do ML ao buscar dados do usuário: {e.response.json()}")
 
-    # Exemplo de como você adicionaria novas funcionalidades no futuro
-    async def get_order_details(self, order_id: int) -> dict:
-        """
-        Busca os detalhes de um pedido específico.
-        """
+    async def search_categories(self, title: str, limit: int = 1) -> list:
         auth_header = await self._get_auth_header()
-        url = f"{self.base_url}/orders/{order_id}"
+        url = f"{self.base_url}/sites/MLB/domain_discovery/search"
+        params = {"q": title, "limit": limit}
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers=auth_header, params=params)
+                response.raise_for_status()
+                data = response.json()
+            if not data:
+                raise HTTPException(status_code=404, detail="Nenhuma categoria encontrada para o título fornecido.")
+            return data[0] if limit == 1 else data
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=f"Erro ao buscar categorias: {e.response.json()}")
+            
+    # ===================================================================
+    # MÉTODO get_category_attributes CORRIGIDO
+    # ===================================================================
+    async def get_category_attributes(self, category_id: str) -> list:
+        """
+        Busca os atributos específicos (ficha técnica) para uma dada categoria.
+        Este endpoint REQUER autenticação.
+        """
+        # CORREÇÃO: Obter o cabeçalho de autenticação antes de fazer a chamada.
+        auth_header = await self._get_auth_header()
+        url = f"{self.base_url}/categories/{category_id}/attributes"
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                # CORREÇÃO: Passar o cabeçalho 'auth_header' na requisição.
+                response = await client.get(url, headers=auth_header)
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=f"Erro ao buscar atributos da categoria: {e.response.json()}")
 
+    async def get_listing_types(self) -> list:
+        auth_header = await self._get_auth_header()
+        url = f"{self.base_url}/sites/MLB/listing_types"
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(url, headers=auth_header)
                 response.raise_for_status()
                 return response.json()
         except httpx.HTTPStatusError as e:
-            raise HTTPException(status_code=e.response.status_code, detail=f"Erro na API do ML ao buscar pedido {order_id}: {e.response.json()}")
+            raise HTTPException(status_code=e.response.status_code, detail=f"Erro ao buscar tipos de anúncio: {e.response.json()}")
+
+    async def get_seller_items_by_sku(self) -> dict:
+        auth_header = await self._get_auth_header()
+        items_url = f"{self.base_url}/users/{self.user_id}/items/search"
+        params = {"status": "active,paused", "limit": 50, "offset": 0}
+        items_by_sku = {}
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                while True:
+                    response = await client.get(items_url, headers=auth_header, params=params)
+                    response.raise_for_status()
+                    data = response.json()
+                    item_ids = data.get("results", [])
+                    if not item_ids:
+                        break
+                    details = await self.get_items_details(item_ids)
+                    for item in details:
+                        sku = item.get("seller_sku")
+                        if sku:
+                            items_by_sku[sku] = { "id": item.get("id"), "title": item.get("title"), "price": item.get("price"), "available_quantity": item.get("available_quantity"), "status": item.get("status"), "permalink": item.get("permalink") }
+                    params["offset"] += len(item_ids)
+                    if params["offset"] >= data["paging"]["total"]:
+                        break
+            return items_by_sku
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=f"Erro ao buscar anúncios do vendedor: {e.response.json()}")
+
+    async def get_items_details(self, item_ids: list) -> list:
+        if not item_ids:
+            return []
+        auth_header = await self._get_auth_header()
+        details_url = f"{self.base_url}/items"
+        params = {"ids": ",".join(item_ids), "attributes": "id,title,price,available_quantity,seller_sku,status,permalink"}
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(details_url, headers=auth_header, params=params)
+                response.raise_for_status()
+                return [item.get("body", {}) for item in response.json() if item.get("code") == 200]
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=f"Erro ao buscar detalhes dos itens: {e.response.json()}")
+        
+    # ===================================================================
+    # NOVO MÉTODO PARA PUBLICAR OU ATUALIZAR UM ANÚNCIO
+    # ===================================================================
+    async def publish_or_update_item(self, item_payload: dict, meli_item_id: Optional[str] = None):
+        """
+        Cria ou atualiza um anúncio, usando o formato de dados moderno da API.
+        """
+        # Validação prévia
+        required_fields = ["title", "category_id", "listing_type_id", "price", "available_quantity"]
+        for field in required_fields:
+            if not item_payload.get(field):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"O campo '{field}' é obrigatório.")
+        
+        auth_header = await self._get_auth_header()
+
+        attributes_raw = item_payload.get("attributes", [])
+        attributes_formatted = []
+        
+        for attr in attributes_raw:
+            # Se value_id existir e não for nulo/vazio, use-o.
+            if attr.get("value_id"):
+                attributes_formatted.append({
+                    "id": attr["id"],
+                    "value_id": attr["value_id"]
+                })
+            # Senão, se value_name existir e não for nulo/vazio, use-o.
+            elif attr.get("value_name"):
+                attributes_formatted.append({
+                    "id": attr["id"],
+                    "value_name": attr["value_name"]
+                })
+        
+        # Adiciona o atributo ITEM_CONDITION obrigatório
+        attributes_formatted.append({"id": "ITEM_CONDITION", "value_id": "2230284"})
+
+        # --- FIM DA CORREÇÃO DE ATRIBUTOS ---
+
+        sale_terms_formatted = [
+            {"id": "WARRANTY_TYPE", "value_id": "2230280"},
+            {"id": "WARRANTY_TIME", "value_name": "90 dias"}
+        ]
+        pictures_formatted = [{"source": pic_url} for pic_url in item_payload.get("pictures", []) if pic_url]
+
+        ml_item_data = {
+            "title": item_payload["title"],
+            "category_id": item_payload["category_id"],
+            "listing_type_id": item_payload["listing_type_id"],
+            "price": float(item_payload["price"]),
+            "currency_id": "BRL",
+            "available_quantity": int(item_payload["available_quantity"]),
+            "buying_mode": "buy_it_now",
+            "pictures": pictures_formatted,
+            "attributes": attributes_formatted, # Usa a lista formatada
+            "sale_terms": sale_terms_formatted,
+            "seller_sku": item_payload.get("seller_sku")
+        }
+
+        # ... (restante do código de POST/PUT e tratamento de erro inalterado) ...
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                if meli_item_id:
+                    update_data = { "title": ml_item_data["title"], "price": ml_item_data["price"], "available_quantity": ml_item_data["available_quantity"], "pictures": ml_item_data["pictures"], "attributes": ml_item_data["attributes"], "sale_terms": ml_item_data["sale_terms"] }
+                    url = f"{self.base_url}/items/{meli_item_id}"
+                    response = await client.put(url, headers=auth_header, json=update_data)
+                else:
+                    ml_item_data["status"] = "active"
+                    url = f"{self.base_url}/items"
+                    response = await client.post(url, headers=auth_header, json=ml_item_data)
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPStatusError as e:
+            error_body = e.response.json()
+            raise HTTPException(status_code=e.response.status_code, detail=f"Erro da API do Mercado Livre: {error_body.get('message', 'Erro desconhecido.')} Causa: {error_body.get('cause', [])}")
+
+
+    async def get_recent_orders(self, limit: int = 50, offset: int = 0) -> dict:
+        """
+        Busca os pedidos de venda mais recentes do vendedor.
+        """
+        auth_header = await self._get_auth_header()
+        
+        url = f"{self.base_url}/orders/search"
+        
+        # --- INÍCIO DA ALTERAÇÃO ---
+        # Adicionamos um filtro de data para buscar pedidos mais antigos.
+        # Por padrão, a API busca apenas os mais recentes.
+        # Aqui, buscamos os últimos 180 dias.
+        data_final = datetime.now()
+        data_inicial = data_final - timedelta(days=180)
+
+        params = {
+            "seller": self.user_id,
+            "sort": "date_desc",
+            "order.date_created.from": data_inicial.strftime('%Y-%m-%dT00:00:00.000-03:00'),
+            "order.date_created.to": data_final.strftime('%Y-%m-%dT23:59:59.999-03:00'),
+            "limit": limit,
+            "offset": offset
+        }
+        # --- FIM DA ALTERAÇÃO ---
+
+        # --- INÍCIO DA DEPURAÇÃO ---
+        print("\n--- [DEPURAÇÃO: Buscando Pedidos do ML] ---")
+        print(f"URL da Requisição: {url}")
+        print(f"Parâmetros Enviados: {params}")
+        print(f"Cabeçalho de Auth (início do token): Authorization: Bearer {self.credentials.access_token[:15]}...")
+        # --- FIM DA DEPURAÇÃO ---
+
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.get(url, headers=auth_header, params=params)
+
+                # --- INÍCIO DA DEPURAÇÃO ---
+                print(f"Resposta da API do ML - Status Code: {response.status_code}")
+                print(f"Resposta da API do ML - Corpo (Body): {response.text}") # Usamos .text para ver a resposta bruta
+                print("--- [FIM DA DEPURAÇÃO] ---\n")
+                # --- FIM DA DEPURAÇÃO ---
+                
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPStatusError as e:
+            # Em caso de erro, a depuração acima já terá nos mostrado a resposta
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"Erro ao buscar pedidos no Mercado Livre: {e.response.json()}"
+            )
