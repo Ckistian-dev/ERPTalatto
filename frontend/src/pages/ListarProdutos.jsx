@@ -99,7 +99,7 @@ export default function ListarProdutos() {
         if (!usuario || Object.keys(usuario).length === 0) return
         // Configuração de colunas
         const ordemPadrao = [
-            "id", "sku", "codigo_barras", "descricao", "unidade", "situacao", "peso_produto", "tipo_produto", "variacoes", "quantidades", "grupo", "subgrupo1", "subgrupo2", "subgrupo3", "subgrupo4", "subgrupo5", "url_imagem", "classificacao_fiscal", "origem", "gtin", "gtin_tributavel", "tabela_precos", "tipo_embalagem", "peso_embalagem", "unidade_caixa", "largura_embalagem", "altura_embalagem", "comprimento_embalagem", "custo_produto", "id_fornecedor", "dias_preparacao", "marca", "garantia", "slug", "descricao_plataforma", "imagens_plataforma", "imagens_variacoes", "largura_produto", "altura_produto", "comprimento_produto", "material_produto", "fabricante", "criado_em"
+            "id", "sku", "codigo_barras", "descricao", "unidade", "situacao", "peso_produto", "tipo_produto", "grupo", "subgrupo1", "subgrupo2", "subgrupo3", "subgrupo4", "subgrupo5", "url_imagem", "classificacao_fiscal", "origem", "gtin", "gtin_tributavel", "tabela_precos", "tipo_embalagem", "peso_embalagem", "unidade_caixa", "largura_embalagem", "altura_embalagem", "comprimento_embalagem", "custo_produto", "id_fornecedor", "criado_em"
         ];
 
 

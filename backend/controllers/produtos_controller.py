@@ -4,7 +4,6 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from typing import Optional
 import os
-import traceback
 import mysql.connector.pooling
 import decimal
 import json
@@ -39,18 +38,8 @@ class ProdutoCreate(BaseModel):
     largura_embalagem: Optional[float] = None
     altura_embalagem: Optional[float] = None
     comprimento_embalagem: Optional[float] = None
-    marca: Optional[str] = None
-    garantia: Optional[int] = None
-    slug: Optional[str] = None
-    descricao_plataforma: Optional[str] = None
-    largura_produto: Optional[float] = None
-    altura_produto: Optional[float] = None
-    comprimento_produto: Optional[float] = None
-    material_produto: Optional[str] = None
-    fabricante: Optional[str] = None
     classificacao_fiscal: Optional[str] = None
     origem: Optional[str] = None
-    valor_ipi: Optional[float] = None
     gtin: Optional[str] = None
     gtin_tributavel: Optional[str] = None
     tabela_precos: Optional[str] = None
@@ -58,10 +47,6 @@ class ProdutoCreate(BaseModel):
     dias_preparacao: Optional[int] = None
     id_fornecedor: Optional[int] = None
     url_imagem: Optional[str] = None
-    imagens_plataforma: Optional[str] = None
-    imagens_variacoes: Optional[str] = None
-    variacoes: Optional[str] = None
-    quantidades: Optional[str] = None
     tipo_embalagem: Optional[str] = None
 
 
@@ -117,12 +102,10 @@ def listar_produtos_paginado(
         colunas_validas = [
             "id", "sku", "codigo_barras", "descricao", "unidade", "situacao", "peso_produto",
             "tipo_produto", "grupo", "subgrupo1", "subgrupo2", "subgrupo3", "subgrupo4", "subgrupo5",
-            "classificacao_fiscal", "origem", "valor_ipi", "gtin", "gtin_tributavel",
+            "classificacao_fiscal", "origem", "gtin", "gtin_tributavel",
             "permite_estoque_negativo", "tipo_embalagem", "peso_embalagem", "unidade_caixa",
             "largura_embalagem", "altura_embalagem", "comprimento_embalagem",
-            "custo_produto", "id_fornecedor", "dias_preparacao", "marca", "garantia", "slug",
-            "largura_produto", "altura_produto", "comprimento_produto",
-            "fabricante", "criado_em"
+            "custo_produto", "id_fornecedor", "criado_em"
         ]
         
         coluna_ordenacao = ordenar_por if ordenar_por in colunas_validas else "id"
@@ -242,8 +225,6 @@ def importar_produtos_confirmado(payload: dict):
                 if isinstance(produto["permite_estoque_negativo"], str):
                     produto["permite_estoque_negativo"] = 1 if produto["permite_estoque_negativo"].lower() == 'sim' else 0
 
-            # REMOVIDO: Não precisamos mais tratar 'estoque' ou 'localizacao' aqui para importação
-
             cursor.execute("SELECT id FROM produtos WHERE sku = %s", (produto["sku"],))
             existente = cursor.fetchone()
 
@@ -293,47 +274,6 @@ def listar_produtos_dropdown():
         cursor.close()
         if conn:
             conn.close()
-
-@router.get("/variacoes_por_produto")
-def listar_variacoes(produto_id: int):
-    conn = pool.get_connection()
-    cursor = conn.cursor(dictionary=True)
-    try:
-        cursor.execute("SELECT variacoes FROM produtos WHERE id = %s", (produto_id,))
-        resultado = cursor.fetchone()
-
-        if not resultado or not resultado["variacoes"]:
-            return []
-
-        try:
-            # Tenta converter a string JSON para uma lista Python
-            variacoes = json.loads(resultado["variacoes"])
-            if not isinstance(variacoes, list): # Garante que o JSON é uma lista
-                return []
-        except json.JSONDecodeError:
-            # Se a string não for um JSON válido, retorna uma lista vazia
-            # para não quebrar o frontend.
-            return []
-
-        return [{"id": v, "descricao": v} for v in variacoes]
-    finally:
-        cursor.close()
-        conn.close()
-
-@router.get("/quantidades_por_produto")
-def listar_quantidades(produto_id: int):
-    conn = pool.get_connection()
-    cursor = conn.cursor(dictionary=True)
-    try:
-        cursor.execute("SELECT quantidades FROM produtos WHERE id = %s", (produto_id,))
-        resultado = cursor.fetchone()
-        if not resultado:
-            return []
-        quantidades = json.loads(resultado["quantidades"]) if resultado["quantidades"] else []
-        return [{"id": q, "quantidade": q} for q in quantidades]
-    finally:
-        cursor.close()
-        conn.close()
         
 @router.get("/tabela_precos_por_produto")
 def listar_tabela_precos(produto_id: int):

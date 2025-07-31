@@ -23,6 +23,9 @@ class AnuncioPayload(BaseModel):
     erp_product_id: int
     ml_listing_id: Optional[str] = None
     form_data: Dict[str, Any]
+    
+class AnswerPayload(BaseModel):
+    text: str
 
 # Pool de conexão para buscar produtos do ERP
 pool = mysql.connector.pooling.MySQLConnectionPool(
@@ -129,7 +132,7 @@ async def get_initial_listing_config(erp_product_id: int, db: Session = Depends(
     # ... (código para buscar credentials e erp_product inalterado) ...
     credentials = db.query(MeliCredentials).first()
     if not credentials:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integração não ativa.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integração Mercado Livre não está ativa.")
     
     conn = pool.get_connection()
     cursor = conn.cursor(dictionary=True)
@@ -170,7 +173,7 @@ async def search_categories_by_term(q: str, db: Session = Depends(get_db)):
     """
     credentials = db.query(MeliCredentials).first()
     if not credentials:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integração não ativa.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integração Mercado Livre não está ativa.")
 
     meli_service = MeliAPIService(user_id=credentials.user_id, db=db)
     # Retorna até 8 sugestões para a busca manual
@@ -182,7 +185,7 @@ async def get_attributes_for_category(category_id: str, db: Session = Depends(ge
     # ... (código inalterado) ...
     credentials = db.query(MeliCredentials).first()
     if not credentials:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integração não ativa.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integração Mercado Livre não está ativa.")
     meli_service = MeliAPIService(user_id=credentials.user_id, db=db)
     attributes = await meli_service.get_category_attributes(category_id)
     return attributes
@@ -195,7 +198,7 @@ async def publish_listing(payload: AnuncioPayload, db: Session = Depends(get_db)
     """
     credentials = db.query(MeliCredentials).first()
     if not credentials:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integração não ativa.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integração Mercado Livre não está ativa.")
 
     # Busca o SKU do produto no ERP, que é essencial para o anúncio
     conn = pool.get_connection()
@@ -347,7 +350,7 @@ async def import_meli_order_to_erp(order_id: int, db: Session = Depends(get_db))
     """
     credentials = db.query(MeliCredentials).first()
     if not credentials:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integração não ativa.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integração Mercado Livre não está ativa.")
 
     meli_service = MeliAPIService(user_id=credentials.user_id, db=db)
     
@@ -405,3 +408,54 @@ def disconnect_integration(db: Session = Depends(get_db)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erro ao desconectar a integração: {e}"
         )
+        
+# ===================================================================
+# NOVOS ENDPOINTS PARA A ABA DE PERGUNTAS
+# ===================================================================
+
+@router.get("/perguntas", summary="Lista as perguntas não respondidas do Mercado Livre")
+async def get_meli_questions(
+    page: int = 1,
+    limit: int = 15,
+    db: Session = Depends(get_db)
+):
+    """
+    Busca as perguntas não respondidas do Mercado Livre de forma paginada.
+    """
+    credentials = db.query(MeliCredentials).first()
+    if not credentials:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integração Mercado Livre não está ativa.")
+    
+    meli_service = MeliAPIService(user_id=credentials.user_id, db=db)
+    offset = (page - 1) * limit
+    
+    try:
+        questions_data = await meli_service.get_unanswered_questions(limit=limit, offset=offset)
+        
+        return {
+            "total": questions_data.get("total", 0),
+            "resultados": questions_data.get("questions", [])
+        }
+    except HTTPException as e:
+        raise e
+
+@router.post("/perguntas/{question_id}/responder", summary="Envia uma resposta para uma pergunta")
+async def post_meli_answer(
+    question_id: int,
+    payload: AnswerPayload,
+    db: Session = Depends(get_db)
+):
+    """
+    Recebe o texto de uma resposta e a envia para a pergunta correspondente.
+    """
+    credentials = db.query(MeliCredentials).first()
+    if not credentials:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integração Mercado Livre não está ativa.")
+    
+    meli_service = MeliAPIService(user_id=credentials.user_id, db=db)
+    
+    try:
+        answer_response = await meli_service.post_answer(question_id=question_id, text=payload.text)
+        return {"message": "Resposta enviada com sucesso!", "data": answer_response}
+    except HTTPException as e:
+        raise e

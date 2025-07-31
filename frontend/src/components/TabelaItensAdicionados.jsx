@@ -9,7 +9,6 @@ export default function TabelaItensAdicionados({ itens = [], onEditar, onExcluir
           <thead className="bg-gray-100 text-gray-700 uppercase">
             <tr>
               <th className="px-2 py-2 text-left min-w-[100px]">Produto</th>
-              <th className="px-2 py-2 text-left min-w-[80px]">Variação</th>
               <th className="px-2 py-2 text-left min-w-[100px]">Tabela de Preço</th>
               <th className="px-2 py-2 text-center min-w-[60px]">Qtd</th>
               <th className="px-2 py-2 text-right min-w-[80px]">Subtotal</th>
@@ -27,7 +26,6 @@ export default function TabelaItensAdicionados({ itens = [], onEditar, onExcluir
               itens.map((item, index) => (
                 <tr key={index} className="border-t hover:bg-gray-50 transition">
                   <td className="px-2 py-2">{item.produto || "-"}</td>
-                  <td className="px-2 py-2">{item.variacao || "-"}</td>
                   <td className="px-2 py-2">{item.tabela_preco || "-"}</td>
                   <td className="px-2 py-2 text-center">{item.quantidade_itens}</td>
                   <td className="px-2 py-2 text-right">

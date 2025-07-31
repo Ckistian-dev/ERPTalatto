@@ -81,7 +81,11 @@ export default function CampoImportarOrcamento({ label, value, onChange, colSpan
                                     onClick={() => handleSelecionar(orc)}
                                     className="px-3 py-2 hover:bg-gray-100 cursor-pointer"
                                 >
-                                    #{orc.id} - {orc.cliente_nome} ({new Date(orc.data_emissao).toLocaleDateString()})
+                                    #{orc.id} - {orc.cliente_nome} ({(() => {
+                                        const [dia, mes, ano] = orc.data_emissao.split('/');
+                                        const data = new Date(+ano, +mes - 1, +dia);
+                                        return data.toLocaleDateString();
+                                    })()})
                                 </li>
                             ))
                         ) : (

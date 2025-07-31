@@ -47,11 +47,8 @@ export default function CadastroProduto({ modo = "novo" }) {
     grupo: '', subgrupo1: '', subgrupo2: '', subgrupo3: '', subgrupo4: '', subgrupo5: '',
     permite_estoque_negativo: 0, peso_produto: '', peso_embalagem: '', unidade_caixa: '',
     largura_embalagem: '', altura_embalagem: '', comprimento_embalagem: '',
-    largura_produto: '', altura_produto: '', comprimento_produto: '',
-    material_produto: [], marca: '', garantia: '', slug: '', descricao_plataforma: '',
     classificacao_fiscal: '', origem: '', gtin: '', gtin_tributavel: '', tabela_precos: {},
-    custo_produto: '', dias_preparacao: '', id_fornecedor: '', url_imagem: [],
-    imagens_plataforma: [], imagens_variacoes: [], variacoes: [], quantidades: [1],
+    custo_produto: '', id_fornecedor: '', url_imagem: [],
     id_logica_embalagem: null, // Campo para o ID da lógica de embalagem
   });
 
@@ -63,12 +60,7 @@ export default function CadastroProduto({ modo = "novo" }) {
         id_logica_embalagem: produtoEdicao.id_logica_embalagem || null,
         codigo_barras: produtoEdicao.codigo_barras || "",
         permite_estoque_negativo: produtoEdicao.permite_estoque_negativo ?? 0,
-        imagens_plataforma: safeParse(produtoEdicao.imagens_plataforma, []),
-        imagens_variacoes: safeParse(produtoEdicao.imagens_variacoes, []),
-        variacoes: safeParse(produtoEdicao.variacoes, []),
-        quantidades: safeParse(produtoEdicao.quantidades, [1]),
         tabela_precos: safeParse(produtoEdicao.tabela_precos, {}),
-        material_produto: safeParse(produtoEdicao.material_produto, []),
         url_imagem: safeParse(produtoEdicao.url_imagem, [])
       }));
     }
@@ -78,7 +70,6 @@ export default function CadastroProduto({ modo = "novo" }) {
     { id: "produto", label: "Produto" }, { id: "fiscal", label: "Fiscal" },
     { id: "preco", label: "Preço" }, { id: "estoque", label: "Estoque" },
     { id: "embalagem", label: "Embalagem" }, { id: "custo", label: "Custo" },
-    { id: "plataforma", label: "Plataforma" }
   ];
 
   const handleChange = (e) => {
@@ -110,22 +101,12 @@ export default function CadastroProduto({ modo = "novo" }) {
       largura_embalagem: toNumberOrNull(form.largura_embalagem),
       altura_embalagem: toNumberOrNull(form.altura_embalagem),
       comprimento_embalagem: toNumberOrNull(form.comprimento_embalagem),
-      largura_produto: toNumberOrNull(form.largura_produto),
-      altura_produto: toNumberOrNull(form.altura_produto),
-      comprimento_produto: toNumberOrNull(form.comprimento_produto),
       custo_produto: toNumberOrNull(form.custo_produto),
       unidade_caixa: toIntOrNull(form.unidade_caixa),
-      dias_preparacao: toIntOrNull(form.dias_preparacao),
       id_fornecedor: toIntOrNull(form.id_fornecedor),
       permite_estoque_negativo: toIntOrNull(form.permite_estoque_negativo),
-      garantia: toIntOrNull(form.garantia),
-      variacoes: JSON.stringify(form.variacoes || []),
-      quantidades: JSON.stringify(form.quantidades || []),
       url_imagem: JSON.stringify(form.url_imagem || []),
       tabela_precos: JSON.stringify(form.tabela_precos || {}),
-      imagens_plataforma: JSON.stringify(form.imagens_plataforma || []),
-      imagens_variacoes: JSON.stringify(form.imagens_variacoes || []),
-      material_produto: JSON.stringify(form.material_produto || []),
     };
 
     try {
@@ -163,8 +144,6 @@ export default function CadastroProduto({ modo = "novo" }) {
             <CampoDropdownEditavel label="Situação" name="situacao" value={form.situacao || "Ativo"} onChange={handleChange} tipo="situacao" usuario={usuario} obrigatorio />
             <CampoNumSetas label="Peso Produto (g)" name="peso_produto" value={form.peso_produto || ""} onChange={handleChange} placeholder="3000" />
             <CampoDropdownEditavel label="Tipo do Produto" name="tipo_produto" value={form.tipo_produto || ""} onChange={handleChange} tipo="tipo_produto" usuario={usuario} />
-            <CampoDropdownEditavelMulti label="Variações" name="variacoes" value={form.variacoes || []} onChange={handleChange} tipo="variacoes" usuario={usuario} />
-            <CampoDropdownEditavelMulti label="Quantidades" name="quantidades" value={form.quantidades || [1]} onChange={handleChange} tipo="quantidades" usuario={usuario} obrigatorio />
             <CampoDropdownEditavel label="Grupo" name="grupo" value={form.grupo || ""} onChange={handleChange} tipo="grupo" usuario={usuario} />
             <CampoDropdownEditavel label={form.subgrupo1 ? "Subgrupo 1" : "Subgrupo"} name="subgrupo1" value={form.subgrupo1 || ""} onChange={handleChange} tipo="subgrupo1" usuario={usuario} />
             {form.subgrupo1 && (<CampoDropdownEditavel label="Subgrupo 2" name="subgrupo2" value={form.subgrupo2 || ""} onChange={handleChange} tipo="subgrupo2" usuario={usuario} />)}
@@ -222,7 +201,6 @@ export default function CadastroProduto({ modo = "novo" }) {
               url={`${API_URL}/embalagem`}
               campoValor="id"
               campoLabel="nome"
-              colSpan
             />
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
@@ -249,7 +227,6 @@ export default function CadastroProduto({ modo = "novo" }) {
         return (
           <>
             <CampoValorMonetario label="Custo Produto" name="custo_produto" value={form.custo_produto} onChange={handleChange} />
-            <CampoNumSetas label="Dias para Preparação" name="dias_preparacao" value={form.dias_preparacao} onChange={handleChange} />
             <CampoDropdownDb
               label="Fornecedor"
               name="id_fornecedor"
@@ -259,22 +236,7 @@ export default function CadastroProduto({ modo = "novo" }) {
               filtro={{ tipo_cadastro: ["Fornecedor"] }}
               campoValor="id"
               campoLabel="nome_razao"
-              colSpan
             />
-          </>
-        );
-      case "plataforma":
-        return (
-          <>
-            <CampoTextsimples label="Marca" name="marca" value={form.marca || ""} onChange={handleChange} placeholder="Ex: Samsung" />
-            <CampoNumSetas label="Garantia" name="garantia" value={form.garantia || ""} onChange={handleChange} placeholder="Meses" />
-            <CampoTextsimples label="Slug" name="slug" value={form.slug || ""} onChange={handleChange} placeholder="exemplo-de-slug" />
-            <CampoTextlong label="Descrição Plataforma" name="descricao_plataforma" value={form.descricao_plataforma || ""} onChange={handleChange} placeholder="Descreva os detalhes da plataforma" colSpan />
-            <CampoURLs label="Imagens Plataforma" name="imagens_plataforma" value={form.imagens_plataforma || []} onChange={handleChange} placeholder="URLs separadas por vírgula" colSpan />
-            <CampoURLs label="Imagens Variações" name="imagens_variacoes" value={form.imagens_variacoes || []} onChange={handleChange} placeholder="URLs das variações" colSpan />
-            <CampoMedidas label="Medidas Produto" nomeLargura="largura_produto" nomeAltura="altura_produto" nomeComprimento="comprimento_produto" largura={form.largura_produto || ""} altura={form.altura_produto || ""} comprimento={form.comprimento_produto || ""}  onChange={handleChange} placeholderLargura="cm" placeholderAltura="cm" placeholderComprimento="cm"/>
-            <CampoDropdownEditavelMulti label="Material Produto" name="material_produto" value={form.material_produto || []} onChange={handleChange} tipo="material_produto" usuario={usuario} placeholder="Selecione ou digite materiais" />
-            <CampoDropdownEditavel label="Fabricante" name="fabricante" value={form.fabricante || ""} onChange={handleChange} tipo="fabricante" usuario={usuario} placeholder="Selecione ou digite o fabricante" />
           </>
         );
       default:

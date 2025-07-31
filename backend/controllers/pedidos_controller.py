@@ -27,8 +27,6 @@ router = APIRouter()
 class ItemPedido(BaseModel):
     produto_id: int
     produto: str
-    variacao_id: Optional[str]
-    variacao: Optional[str]
     quantidade_itens: int
     tabela_preco_id: Optional[str]
     tabela_preco: Optional[str]

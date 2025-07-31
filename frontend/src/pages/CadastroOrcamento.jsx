@@ -13,6 +13,7 @@ import ModalErro from "@/components/modals/ModalErro";
 import ButtonComPermissao from "@/components/buttons/ButtonComPermissao";
 import CampoPagamento from "@/components/campos/CampoPagamento";
 import CampoTextlong from "@/components/campos/CampoTextlong";
+import CampoImportarOrcamento from "@/components/campos/CampoImportarOrcamento";
 
 const API_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -43,7 +44,7 @@ export default function Cadastroorcamento({ modo = "novo" }) {
         lista_itens: [],
         formas_pagamento: [],
         observacao: '',
-        situacao_pedido: "Orçamento",
+        situacao_pedido: "Aguardando Aprovação",
         importar_orcamento: '',
         produto_selecionado: null,
     });
@@ -106,7 +107,7 @@ export default function Cadastroorcamento({ modo = "novo" }) {
         };
         fetchPrecoDoProduto();
     }, [form.produto_selecionado]);
-    
+
     useEffect(() => {
         const totalItens = itens.reduce((acc, item) => acc + (Number(item.total_com_desconto) || 0), 0);
         setForm(prevForm => ({ ...prevForm, total: totalItens }));
@@ -143,21 +144,45 @@ export default function Cadastroorcamento({ modo = "novo" }) {
             return;
         }
 
-        // Cria o payload e renomeia as chaves para corresponder ao backend.
-        const payload = { 
-            ...form, 
-            lista_itens: itens,
+        // --- INÍCIO DA CORREÇÃO PRINCIPAL ---
+
+        // Passo 1: Monta o payload base com os dados do formulário.
+        const payload = {
+            ...form,
+            lista_itens: itens, // Garante que a lista de itens mais atual seja usada
             cliente_id: form.cliente,
             vendedor_id: form.vendedor,
-            transportadora_id: form.transportadora
+            transportadora_id: form.transportadora,
         };
-        
+
+        // Passo 2: Garante que todos os campos que são JSON no banco
+        // sejam enviados como objetos/arrays, e não como texto.
+        // Isso é crucial para a validação no backend.
+        if (typeof payload.lista_itens === 'string') {
+            payload.lista_itens = JSON.parse(payload.lista_itens || '[]');
+        }
+        if (typeof payload.formas_pagamento === 'string') {
+            payload.formas_pagamento = JSON.parse(payload.formas_pagamento || '[]');
+        }
+        if (typeof payload.programacao === 'string') {
+            payload.programacao = JSON.parse(payload.programacao || 'null');
+        }
+        if (typeof payload.endereco_expedicao === 'string') {
+            payload.endereco_expedicao = JSON.parse(payload.endereco_expedicao || 'null');
+        }
+
+        // Passo 3: Limpa chaves antigas que não são usadas no backend.
         delete payload.cliente;
         delete payload.vendedor;
         delete payload.transportadora;
+        delete payload.importar_orcamento;
+        delete payload.produto_selecionado;
+
+        // --- FIM DA CORREÇÃO PRINCIPAL ---
 
         try {
             if (modo === "editar" && form.id) {
+                // Envia o payload corrigido para a API
                 await axios.put(`${API_URL}/orcamentos/${form.id}`, payload);
                 toast.success("orcamento atualizado com sucesso!");
             } else {
@@ -167,7 +192,7 @@ export default function Cadastroorcamento({ modo = "novo" }) {
             navigate("/orcamentos");
         } catch (err) {
             const errorMsg = err?.response?.data?.detail || "Erro ao salvar o orcamento.";
-            console.error("Erro do Backend:", err.response.data); 
+            console.error("Erro do Backend:", err.response?.data);
             setErro(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg));
             toast.error("Falha ao salvar. Verifique os erros.");
         }
@@ -186,7 +211,6 @@ export default function Cadastroorcamento({ modo = "novo" }) {
             case "dados_iniciais":
                 return (
                     <>
-                        
                         <CampoData label="Data de Emissão" name="data_emissao" value={form.data_emissao || ""} onChange={handleChange} hoje obrigatorio />
                         <CampoData label="Data de Validade" name="data_validade" value={form.data_validade || ""} onChange={handleChange} hojeMaisDias={7} obrigatorio />
                         <CampoDropdownDb label="Cliente" name="cliente" value={form.cliente || ""} onChange={handleChange} url={`${API_URL}/cadastros_dropdown`} filtro={{ tipo_cadastro: ["Cliente"] }} campoValor="id" campoLabel="nome_razao" obrigatorio />
@@ -198,11 +222,11 @@ export default function Cadastroorcamento({ modo = "novo" }) {
             case "itens":
                 return <CampoItens form={form} setForm={setForm} itens={itens} setItens={setItens} precosDisponiveis={precosDisponiveis} API_URL={API_URL} />;
             case "dados_frete":
-                 return (
+                return (
                     <>
                         <CampoDropdownEditavel label="Tipo de Frete" name="tipo_frete" value={form.tipo_frete || ""} onChange={handleChange} tipo="tipo_frete" usuario={usuario} obrigatorio />
-                        <CampoDropdownDb label="Transportadora" name="transportadora" value={form.transportadora || ""} onChange={handleChange} url={`${API_URL}/cadastros_dropdown`} filtro={{ tipo_cadastro: ["Transportadora"] }} campoValor="id" campoLabel="nome_razao" obrigatorio={form.tipo_frete !== 'Sem Frete'} disabled={form.tipo_frete === 'Sem Frete'} />
                         <CampoValorMonetario label="Valor do Frete" name="valor_frete" value={form.valor_frete || 0} onChange={handleChange} placeholder="0,00" />
+                        <CampoDropdownDb label="Transportadora" name="transportadora" value={form.transportadora || ""} onChange={handleChange} url={`${API_URL}/cadastros_dropdown`} filtro={{ tipo_cadastro: ["Transportadora"] }} campoValor="id" campoLabel="nome_razao" obrigatorio={form.tipo_frete !== 'Sem Frete'} disabled={form.tipo_frete === 'Sem Frete'} colSpan/>
                     </>
                 );
             case "condicoes_pagamento":

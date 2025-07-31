@@ -272,3 +272,50 @@ class MeliAPIService:
                 status_code=e.response.status_code,
                 detail=f"Erro ao buscar pedidos no Mercado Livre: {e.response.json()}"
             )
+            
+    
+    # ===================================================================
+    # NOVOS MÉTODOS PARA PERGUNTAS E RESPOSTAS
+    # ===================================================================
+    async def get_unanswered_questions(self, limit: int = 50, offset: int = 0) -> dict:
+        """
+        Busca as perguntas não respondidas de um vendedor, de forma paginada.
+        """
+        auth_header = await self._get_auth_header()
+        
+        url = f"{self.base_url}/questions/search"
+        params = {
+            "seller_id": self.user_id,
+            "status": "UNANSWERED",
+            "sort": "date_desc",
+            "limit": limit,
+            "offset": offset
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.get(url, headers=auth_header, params=params)
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=f"Erro ao buscar perguntas: {e.response.json()}")
+
+    async def post_answer(self, question_id: int, text: str) -> dict:
+        """
+        Envia uma resposta para uma pergunta específica.
+        """
+        auth_header = await self._get_auth_header()
+        
+        url = f"{self.base_url}/answers"
+        payload = {
+            "question_id": question_id,
+            "text": text
+        }
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, headers=auth_header, json=payload)
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=f"Erro ao enviar resposta: {e.response.json()}")

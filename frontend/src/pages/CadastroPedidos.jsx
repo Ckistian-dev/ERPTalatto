@@ -257,8 +257,8 @@ export default function CadastroPedido({ modo = "novo" }) {
                 return (
                     <>
                         <CampoDropdownEditavel label="Tipo de Frete" name="tipo_frete" value={form.tipo_frete || ""} onChange={handleChange} tipo="tipo_frete" usuario={usuario} obrigatorio />
-                        <CampoDropdownDb label="Transportadora" name="transportadora" value={form.transportadora || ""} onChange={handleChange} url={`${API_URL}/cadastros_dropdown`} filtro={{ tipo_cadastro: ["Transportadora"] }} campoValor="id" campoLabel="nome_razao" obrigatorio={form.tipo_frete !== 'Sem Frete'} disabled={form.tipo_frete === 'Sem Frete'} />
                         <CampoValorMonetario label="Valor do Frete" name="valor_frete" value={form.valor_frete || 0} onChange={handleChange} placeholder="0,00" />
+                        <CampoDropdownDb label="Transportadora" name="transportadora" value={form.transportadora || ""} onChange={handleChange} url={`${API_URL}/cadastros_dropdown`} filtro={{ tipo_cadastro: ["Transportadora"] }} campoValor="id" campoLabel="nome_razao" obrigatorio={form.tipo_frete !== 'Sem Frete'} disabled={form.tipo_frete === 'Sem Frete'} colSpan/>
                     </>
                 );
             case "condicoes_pagamento":

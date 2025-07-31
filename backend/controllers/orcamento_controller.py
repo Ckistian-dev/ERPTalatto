@@ -27,8 +27,6 @@ router = APIRouter()
 class Itemorcamento(BaseModel):
     produto_id: int
     produto: str
-    variacao_id: Optional[str]
-    variacao: Optional[str]
     quantidade_itens: int
     tabela_preco_id: Optional[str]
     tabela_preco: Optional[str]
@@ -62,13 +60,8 @@ class orcamentoCreate(BaseModel):
     formas_pagamento: List[FormaPagamento]
     data_finalizacao: Optional[str] = None
     ordem_finalizacao: Optional[float] = None
-    endereco_expedicao: Optional[dict] = None
-    hora_expedicao: Optional[str] = None
-    usuario_expedicao: Optional[str] = None
-    numero_nf: Optional[str] = None
-    data_nf: Optional[str] = None
     observacao: Optional[str]
-    situacao_pedido: str
+    situacao_pedido: Optional[str] = None
 
 
 # ATUALIZADO: Campos renomeados para o padrão do banco
@@ -89,13 +82,6 @@ class orcamentoUpdate(BaseModel):
     tipo_frete: Optional[str] = None
     valor_frete: Optional[float] = None
     formas_pagamento: Optional[List[FormaPagamento]] = None
-    data_finalizacao: Optional[str] = None
-    ordem_finalizacao: Optional[float] = None
-    endereco_expedicao: Optional[dict] = None
-    hora_expedicao: Optional[str] = None
-    usuario_expedicao: Optional[str] = None
-    numero_nf: Optional[str] = None
-    data_nf: Optional[str] = None
     observacao: Optional[str] = None
     situacao_pedido: Optional[str] = None
     
@@ -138,11 +124,9 @@ def criar_orcamento(orcamento: orcamentoCreate):
                 cliente_id, cliente_nome, vendedor_id, vendedor_nome,
                 origem_venda, tipo_frete, transportadora_id, transportadora_nome,
                 valor_frete, total, desconto_total, total_com_desconto,
-                lista_itens, formas_pagamento, data_finalizacao, ordem_finalizacao, observacao,
-                endereco_expedicao, hora_expedicao, usuario_expedicao,
-                numero_nf, data_nf
+                lista_itens, formas_pagamento, data_finalizacao, ordem_finalizacao, observacao
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             orcamento.situacao_pedido, orcamento.data_emissao, orcamento.data_validade,
             orcamento.cliente_id, orcamento.cliente_nome, orcamento.vendedor_id, orcamento.vendedor_nome,
@@ -156,9 +140,6 @@ def criar_orcamento(orcamento: orcamentoCreate):
             orcamento.data_finalizacao,
             decimal.Decimal(str(orcamento.ordem_finalizacao)) if orcamento.ordem_finalizacao is not None else None,
             orcamento.observacao,
-            json.dumps(orcamento.endereco_expedicao) if orcamento.endereco_expedicao else None,
-            orcamento.hora_expedicao, orcamento.usuario_expedicao,
-            orcamento.numero_nf, orcamento.data_nf,
         ))
         conn.commit()
         return {"mensagem": "orcamento criado com sucesso"}

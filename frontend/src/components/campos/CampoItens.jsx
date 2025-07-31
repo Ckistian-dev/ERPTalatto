@@ -31,7 +31,6 @@ export default function CampoItens({
                     novoForm.produto_selecionado_nome = label;
                     novoForm.produto_selecionado_sku = item?.sku || ""; // MODIFICAÇÃO: Adicionando o SKU ao form
                 }
-                if (name === "variacao_selecionada") novoForm.variacao_selecionada_nome = label;
                 if (name === "tabela_preco_selecionada") novoForm.tabela_preco_selecionada_nome = label;
                 if (name === "cliente") novoForm.cliente_nome = label;
                 if (name === "vendedor") novoForm.vendedor_nome = label;
@@ -68,8 +67,6 @@ export default function CampoItens({
             produto_selecionado: "",
             produto_selecionado_nome: "",
             produto_selecionado_sku: "", // MODIFICAÇÃO: Limpar SKU
-            variacao_selecionada: "",
-            variacao_selecionada_nome: "",
             quantidade_itens: 1,
             tabela_preco_selecionada: "",
             tabela_preco_selecionada_nome: "",
@@ -98,8 +95,6 @@ export default function CampoItens({
             produto_id: form.produto_selecionado,
             sku: form.produto_selecionado_sku || "", // MODIFICAÇÃO: Adicionando SKU ao item
             produto: form.produto_selecionado_nome || "Produto",
-            variacao_id: form.variacao_selecionada,
-            variacao: form.variacao_selecionada_nome || "",
             quantidade_itens: quantidade,
             tabela_preco_id: form.tabela_preco_selecionada,
             tabela_preco: form.tabela_preco_selecionada_nome || "",
@@ -132,8 +127,6 @@ export default function CampoItens({
             produto_selecionado: item.produto_id || "",
             produto_selecionado_nome: item.produto || "",
             produto_selecionado_sku: item.sku || "", // MODIFICAÇÃO: Preenchendo o SKU para edição
-            variacao_selecionada: item.variacao_id || "",
-            variacao_selecionada_nome: item.variacao || "",
             quantidade_itens: item.quantidade_itens || 1,
             tabela_preco_selecionada: item.tabela_preco_id || "",
             tabela_preco_selecionada_nome: item.tabela_preco || "",
@@ -172,22 +165,13 @@ export default function CampoItens({
                 campoImagem="url_imagem"
                 // Garanta que este componente passe o objeto inteiro no 'onChange',
                 // por exemplo: onChange({ target: { ..., item: itemCompleto } })
+                colSpan
             />
             <CampoNumSetas
                 label="Quantidade de Itens"
                 name="quantidade_itens"
                 value={form.quantidade_itens || 1}
                 onChange={handleChange}
-            />
-            <CampoDropdownDb
-                label="Variação"
-                name="variacao_selecionada"
-                value={form.variacao_selecionada || ""}
-                onChange={handleChange}
-                url={`${baseUrl}/variacoes_por_produto?produto_id=${form.produto_selecionado || 0}`}
-                campoValor="id"
-                campoLabel="descricao"
-                disabled={!form.produto_selecionado}
             />
             <CampoDropdownDb
                 label="Tabela de Preço"
