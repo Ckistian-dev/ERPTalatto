@@ -26,6 +26,11 @@ class AnuncioPayload(BaseModel):
     
 class AnswerPayload(BaseModel):
     text: str
+    
+class VincularPayload(BaseModel):
+    ml_item_id: str
+    erp_product_sku: str
+
 
 # Pool de conexão para buscar produtos do ERP
 pool = mysql.connector.pooling.MySQLConnectionPool(
@@ -65,67 +70,76 @@ async def get_integration_status(db: Session = Depends(get_db)):
         traceback.print_exc()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro interno: {e}")
 
-@router.get("/anuncios", summary="Lista produtos do ERP e seu status no Mercado Livre")
-async def get_combined_listings(
+@router.get("/anuncios", summary="Lista anúncios do ML e os vincula com produtos do ERP")
+async def get_ml_listings_with_erp_link(
     page: int = 1,
     limit: int = 15,
-    filtro_texto: Optional[str] = Query(None),
     db: Session = Depends(get_db)
 ):
-    # ... (código do endpoint /anuncios inalterado) ...
+    """
+    NOVA LÓGICA:
+    1. Busca os anúncios diretamente do Mercado Livre de forma paginada.
+    2. Pega os SKUs desses anúncios.
+    3. Busca no banco de dados do ERP por produtos com esses SKUs.
+    4. Combina as informações e retorna para o frontend.
+    """
     credentials = db.query(MeliCredentials).first()
     if not credentials:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integração Mercado Livre não está ativa.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integração não ativa.")
     
     meli_service = MeliAPIService(user_id=credentials.user_id, db=db)
-
+    offset = (page - 1) * limit
+    
     try:
-        ml_items_by_sku = await meli_service.get_seller_items_by_sku()
+        # 1. Busca os anúncios do ML de forma paginada
+        # Reutilizaremos a função get_recent_orders do serviço, pois a API é similar
+        search_results = await meli_service.get_seller_items_paged(limit=limit, offset=offset)
+        
+        ml_listings = search_results.get("results", [])
+        total_ml = search_results.get("paging", {}).get("total", 0)
+
+        if not ml_listings:
+            return {"total": 0, "resultados": []}
+
+        # 2. Pega os SKUs dos anúncios buscados
+        skus_to_find = [item.get("seller_sku") for item in ml_listings if item.get("seller_sku")]
+
+        erp_products_map = {}
+        if skus_to_find:
+            # 3. Busca no ERP por todos os produtos com esses SKUs de uma só vez
+            conn = pool.get_connection()
+            cursor = conn.cursor(dictionary=True)
+            try:
+                # Usamos um 'IN (%s, %s, ...)' para uma busca eficiente
+                format_strings = ','.join(['%s'] * len(skus_to_find))
+                cursor.execute(f"SELECT id, sku, descricao, tabela_precos, url_imagem FROM produtos WHERE sku IN ({format_strings})", tuple(skus_to_find))
+                erp_products = cursor.fetchall()
+                for product in erp_products:
+                    erp_products_map[product['sku']] = product
+            finally:
+                cursor.close()
+                conn.close()
+
+        # 4. Combina as informações
+        resultados_combinados = []
+        for ml_listing in ml_listings:
+            sku = ml_listing.get("seller_sku")
+            erp_product = erp_products_map.get(sku) # Procura o produto do ERP no mapa
+            
+            resultados_combinados.append({
+                "ml_listing": ml_listing,
+                "erp_product": erp_product # Será null se não encontrar o vínculo
+            })
+
+        return {
+            "total": total_ml,
+            "resultados": resultados_combinados
+        }
     except HTTPException as e:
-        print(f"Aviso: Falha ao buscar anúncios do ML. Exibindo apenas dados do ERP. Erro: {e.detail}")
-        ml_items_by_sku = {}
-
-    conn = pool.get_connection()
-    cursor = conn.cursor(dictionary=True)
-    try:
-        where_clauses = ["situacao = 'Ativo'"]
-        valores = []
-        
-        if filtro_texto:
-            where_clauses.append("(sku LIKE %s OR descricao LIKE %s)")
-            valores.extend([f"%{filtro_texto}%", f"%{filtro_texto}%"])
-
-        where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
-
-        query_total = f"SELECT COUNT(*) as total FROM produtos {where_sql}"
-        cursor.execute(query_total, valores)
-        total_erp = cursor.fetchone()["total"]
-
-        offset = (page - 1) * limit
-        query_produtos = f"SELECT id, sku, descricao, custo_produto, tabela_precos FROM produtos {where_sql} ORDER BY id DESC LIMIT %s OFFSET %s"
-        cursor.execute(query_produtos, valores + [limit, offset])
-        erp_products = cursor.fetchall()
-
+        raise e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao buscar produtos do ERP: {e}")
-    finally:
-        cursor.close()
-        conn.close()
-
-    resultados_combinados = []
-    for erp_product in erp_products:
-        sku = erp_product.get("sku")
-        ml_data = ml_items_by_sku.get(sku)
-        
-        resultados_combinados.append({
-            "erp_product": erp_product,
-            "ml_listing": ml_data
-        })
-
-    return {
-        "total": total_erp,
-        "resultados": resultados_combinados
-    }
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro ao buscar anúncios combinados: {e}")
 
 @router.get("/anuncios/configuracoes-iniciais", summary="Busca dados iniciais para configurar um anúncio")
 async def get_initial_listing_config(erp_product_id: int, db: Session = Depends(get_db)):
@@ -457,5 +471,29 @@ async def post_meli_answer(
     try:
         answer_response = await meli_service.post_answer(question_id=question_id, text=payload.text)
         return {"message": "Resposta enviada com sucesso!", "data": answer_response}
+    except HTTPException as e:
+        raise e
+    
+# ===================================================================
+# NOVO ENDPOINT PARA VINCULAR UM ANÚNCIO A UM PRODUTO
+# ===================================================================
+@router.post("/anuncios/vincular", summary="Vincula um anúncio do ML a um produto do ERP")
+async def link_item_to_product(payload: VincularPayload, db: Session = Depends(get_db)):
+    """
+    Atualiza o seller_sku de um anúncio do Mercado Livre para criar um vínculo
+    com um produto existente no ERP.
+    """
+    credentials = db.query(MeliCredentials).first()
+    if not credentials:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integração não ativa.")
+    
+    meli_service = MeliAPIService(user_id=credentials.user_id, db=db)
+    
+    try:
+        result = await meli_service.update_item_sku(
+            meli_item_id=payload.ml_item_id,
+            sku=payload.erp_product_sku
+        )
+        return {"message": "Anúncio vinculado com sucesso.", "data": result}
     except HTTPException as e:
         raise e

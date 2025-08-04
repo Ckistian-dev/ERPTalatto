@@ -9,7 +9,7 @@ import decimal
 import json
 from datetime import datetime
 
-# Pool de conexão MySQL
+# Pool de conexão MySQL (sem alterações)
 pool = mysql.connector.pooling.MySQLConnectionPool(
     pool_name="produto_pool",
     pool_size=10,
@@ -23,6 +23,7 @@ pool = mysql.connector.pooling.MySQLConnectionPool(
 
 router = APIRouter()
 
+# --- Nenhuma alteração nas classes e rotas abaixo até "listar_tabela_precos" ---
 class ProdutoCreate(BaseModel):
     sku: str
     descricao: str
@@ -274,7 +275,7 @@ def listar_produtos_dropdown():
         cursor.close()
         if conn:
             conn.close()
-        
+            
 @router.get("/tabela_precos_por_produto")
 def listar_tabela_precos(produto_id: int):
     conn = pool.get_connection()
@@ -288,9 +289,25 @@ def listar_tabela_precos(produto_id: int):
         try:
             tabelas_precos = json.loads(resultado["tabela_precos"])
             response_data = []
-            for nome, valor in tabelas_precos.items():
-                if isinstance(valor, (int, float, decimal.Decimal)):
-                    response_data.append({"id": nome, "nome": nome, "valor": float(valor)})
+            for nome, config in tabelas_precos.items():
+                # Lógica para compatibilidade com a estrutura antiga (valor numérico direto)
+                # e a nova estrutura (objeto com 'valor' e 'descontos').
+                if isinstance(config, dict):
+                    # Nova estrutura: {"Tabela": {"valor": 100, "descontos": {"10": 5}}}
+                    # Garante que as chaves essenciais existam
+                    final_config = {
+                        "valor": config.get("valor", 0),
+                        "descontos": config.get("descontos", {})
+                    }
+                    response_data.append({"id": nome, "nome": nome, "config": final_config})
+                elif isinstance(config, (int, float, decimal.Decimal)):
+                    # Estrutura antiga: {"Tabela": 100}
+                    # Converte para a nova estrutura para consistência no frontend
+                    response_data.append({
+                        "id": nome,
+                        "nome": nome,
+                        "config": {"valor": float(config), "descontos": {}}
+                    })
             return response_data
         except (json.JSONDecodeError, TypeError):
             raise HTTPException(status_code=500, detail="Estrutura de dados da tabela de preços é inválida.")

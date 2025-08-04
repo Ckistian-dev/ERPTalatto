@@ -110,10 +110,9 @@ export default function ModalVisualizarPedido({ pedido = pedidoVazio, onClose })
                 <section className="grid grid-cols-1 mt-4">
                     <h3 className="text-lg font-bold text-gray-800 mb-2">Itens do Pedido</h3>
                     <Table
-                        headers={['Produto', 'Variação', 'Qtd', 'Subtotal']}
+                        headers={['Produto', 'Qtd', 'Subtotal']}
                         rows={itens.map(item => [
                             item.produto,
-                            item.variacao,
                             item.quantidade_itens,
                             formatarValor(item.subtotal),
                         ])}

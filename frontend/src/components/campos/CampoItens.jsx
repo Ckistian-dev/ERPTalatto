@@ -4,6 +4,8 @@ import CampoDropdownDb from "@/components/campos/CampoDropdownDb";
 import CampoNumSetas from "@/components/campos/CampoNumSetas";
 import TabelaItensAdicionados from "@/components/TabelaItensAdicionados";
 
+const faixasDescontoDefinidas = [120, 60, 50, 48, 40, 36, 30, 25, 24, 20, 18, 12, 10, 8, 7, 6, 5, 4, 3, 2];
+
 export default function CampoItens({
     form,
     setForm,
@@ -15,58 +17,110 @@ export default function CampoItens({
     const [editandoIndex, setEditandoIndex] = useState(null);
     const baseUrl = API_URL || import.meta.env.VITE_API_BASE_URL;
 
-    const handleChange = (e) => {
-        // Assumimos que o componente CampoDropdownDb pode passar o objeto completo 
-        // do item selecionado no evento, como `e.target.item`.
-        const { name, value, label, formatado, item } = e.target;
-        setForm((prev) => {
-            const novoForm = { ...prev };
-            if (formatado !== undefined) {
-                novoForm[name] = value;
-            } else {
-                novoForm[name] = value;
+    // --- Funções Auxiliares de Cálculo (sem alterações) ---
+    const getPriceConfig = (tabelaPrecoId) => {
+        if (!precosDisponiveis || !tabelaPrecoId) return null;
+        const precoEncontrado = precosDisponiveis.find(p => p.id === tabelaPrecoId);
+        return precoEncontrado ? precoEncontrado.config : null;
+    };
+
+    const getDescontoAplicado = (quantidade, descontos) => {
+        if (!descontos) return 0;
+        for (const faixa of faixasDescontoDefinidas) {
+            if (quantidade >= faixa && descontos[faixa] && Number(descontos[faixa]) > 0) {
+                return parseFloat(descontos[faixa]);
             }
+        }
+        return 0;
+    };
+
+    // VVVVVVVV CORREÇÃO ABAIXO VVVVVVVV
+    // Função central que calcula todos os valores de um item.
+    // Será usada tanto ao adicionar um novo item quanto para recalcular os itens existentes.
+    const calcularValoresItem = (item) => {
+        const priceConfig = getPriceConfig(item.tabela_preco_id);
+        const quantidade = Number(item.quantidade_itens) || 1;
+
+        // Se a configuração de preço ainda não estiver disponível, retorna o item com valores zerados
+        // para evitar exibir dados incorretos ou causar erros.
+        if (!priceConfig || typeof priceConfig.valor === 'undefined') {
+            return {
+                ...item,
+                preco_unitario: 0,
+                subtotal: item.subtotal || 0, // Mantém o subtotal original se existir
+                desconto_item: 0,
+                total_com_desconto: 0,
+            };
+        }
+
+        const precoUnitarioBase = parseFloat(priceConfig.valor);
+        const descontoUnitario = getDescontoAplicado(quantidade, priceConfig.descontos);
+        const precoUnitarioFinal = precoUnitarioBase - descontoUnitario;
+
+        return {
+            ...item,
+            preco_unitario: precoUnitarioFinal,
+            subtotal: precoUnitarioBase * quantidade,
+            desconto_item: descontoUnitario * quantidade,
+            total_com_desconto: precoUnitarioFinal * quantidade,
+        };
+    };
+
+    // useEffect CORRIGIDO: Agora ele recalcula os itens quando as regras de preço são carregadas.
+    useEffect(() => {
+        // Só executa se tivermos as regras de preço e itens na lista.
+        if (precosDisponiveis.length > 0 && Array.isArray(itens)) {
+
+            // 1. Recalcula cada item na lista para garantir que os preços estão atualizados.
+            const itensRecalculados = itens.map(calcularValoresItem);
+
+            // 2. Compara a lista antiga com a nova para evitar loops infinitos de renderização.
+            //    Só atualiza o estado se houver alguma mudança nos valores calculados.
+            if (JSON.stringify(itens) !== JSON.stringify(itensRecalculados)) {
+                setItens(itensRecalculados);
+            }
+        }
+    // A dependência de `precosDisponiveis` é crucial. O efeito roda quando os preços chegam da API.
+    }, [precosDisponiveis, itens, setItens]);
+    
+    // useEffect para atualizar o TOTAL GERAL do formulário (sem alterações na lógica)
+    useEffect(() => {
+        if (Array.isArray(itens)) {
+            const novoTotalGeral = itens.reduce((acc, item) => acc + (item.total_com_desconto || 0), 0);
+            
+            setForm((prev) => ({
+                ...prev,
+                lista_itens: itens,
+                total: novoTotalGeral,
+            }));
+        }
+    }, [itens, setForm]);
+    // ^^^^^^^^ CORREÇÃO ACIMA ^^^^^^^^
+
+    const handleChange = (e) => {
+        const { name, value, label, item } = e.target;
+        setForm((prev) => {
+            const novoForm = { ...prev, [name]: value };
             if (label !== undefined) {
                 if (name === "produto_selecionado") {
                     novoForm.produto_selecionado_nome = label;
-                    novoForm.produto_selecionado_sku = item?.sku || ""; // MODIFICAÇÃO: Adicionando o SKU ao form
+                    novoForm.produto_selecionado_sku = item?.sku || "";
+                    novoForm.tabela_preco_selecionada = "";
+                    novoForm.tabela_preco_selecionada_nome = "";
+                } else {
+                    novoForm[`${name}_nome`] = label;
                 }
-                if (name === "tabela_preco_selecionada") novoForm.tabela_preco_selecionada_nome = label;
-                if (name === "cliente") novoForm.cliente_nome = label;
-                if (name === "vendedor") novoForm.vendedor_nome = label;
             }
             return novoForm;
         });
     };
 
-    const getPrecoUnitario = (tabelaPrecoId) => {
-        if (!precosDisponiveis || precosDisponiveis.length === 0 || !tabelaPrecoId) {
-            return 0;
-        }
-        const precoEncontrado = precosDisponiveis.find(p => p.id === tabelaPrecoId);
-        return precoEncontrado ? parseFloat(precoEncontrado.valor) : 0;
-    };
-
-    const calcularTotal = (lista) => {
-        const itensComTotaisAtualizados = lista.map(item => {
-            const precoUnitario = getPrecoUnitario(item.tabela_preco_id);
-            const subtotal = precoUnitario * (Number(item.quantidade_itens) || 0);
-            return {
-                ...item,
-                preco_unitario: precoUnitario,
-                subtotal: subtotal,
-                total_com_desconto: subtotal
-            };
-        });
-        return itensComTotaisAtualizados.reduce((acc, item) => acc + (item.total_com_desconto || 0), 0);
-    };
-
-    const limparFormulario = () => {
+    const limparFormularioItem = () => {
         setForm((prevForm) => ({
             ...prevForm,
             produto_selecionado: "",
             produto_selecionado_nome: "",
-            produto_selecionado_sku: "", // MODIFICAÇÃO: Limpar SKU
+            produto_selecionado_sku: "",
             quantidade_itens: 1,
             tabela_preco_selecionada: "",
             tabela_preco_selecionada_nome: "",
@@ -74,50 +128,44 @@ export default function CampoItens({
     };
 
     const handleAdicionarOuEditarItem = () => {
-        if (!form.produto_selecionado) {
-            return toast.error("Selecione um produto antes de adicionar.");
-        }
-        if (!form.tabela_preco_selecionada) {
-            return toast.error("Selecione uma tabela de preço para o item.");
+        if (!form.produto_selecionado || !form.tabela_preco_selecionada) {
+            return toast.error("Selecione um produto e uma tabela de preço.");
         }
         const quantidade = Number(form.quantidade_itens) || 1;
         if (quantidade <= 0) {
             return toast.error("A quantidade deve ser maior que zero.");
         }
 
-        const precoUnitario = getPrecoUnitario(form.tabela_preco_selecionada);
-        if (precoUnitario <= 0) {
-            return toast.error("Preço unitário do produto não encontrado ou é zero.");
-        }
-        const subtotal = precoUnitario * quantidade;
-
-        const novoItem = {
+        const itemBase = {
             produto_id: form.produto_selecionado,
-            sku: form.produto_selecionado_sku || "", // MODIFICAÇÃO: Adicionando SKU ao item
+            sku: form.produto_selecionado_sku || "",
             produto: form.produto_selecionado_nome || "Produto",
             quantidade_itens: quantidade,
             tabela_preco_id: form.tabela_preco_selecionada,
             tabela_preco: form.tabela_preco_selecionada_nome || "",
-            preco_unitario: precoUnitario,
-            subtotal: subtotal,
-            desconto_item: 0,
-            total_com_desconto: subtotal,
         };
 
+        // Usa a mesma função de cálculo para garantir consistência.
+        const novoItemCalculado = calcularValoresItem(itemBase);
+        
+        if (!novoItemCalculado.preco_unitario && novoItemCalculado.total_com_desconto === 0) {
+            const priceConfig = getPriceConfig(itemBase.tabela_preco_id);
+            if (!priceConfig) return toast.error("Preço do produto não encontrado. Verifique o cadastro do produto.");
+        }
+
         setItens(prev => {
-            let novosItens = [...prev];
+            const novosItens = [...prev];
             if (editandoIndex !== null) {
-                novosItens[editandoIndex] = novoItem;
+                novosItens[editandoIndex] = novoItemCalculado;
             } else {
-                novosItens.push(novoItem);
+                novosItens.push(novoItemCalculado);
             }
             return novosItens;
         });
 
-        limparFormulario();
+        limparFormularioItem();
         setEditandoIndex(null);
-
-        toast.success(editandoIndex !== null ? "Item editado!" : "Item adicionado!");
+        toast.success(editandoIndex !== null ? "Item atualizado!" : "Item adicionado!");
     };
 
     const handleEditarItem = (index) => {
@@ -126,7 +174,7 @@ export default function CampoItens({
             ...prev,
             produto_selecionado: item.produto_id || "",
             produto_selecionado_nome: item.produto || "",
-            produto_selecionado_sku: item.sku || "", // MODIFICAÇÃO: Preenchendo o SKU para edição
+            produto_selecionado_sku: item.sku || "",
             quantidade_itens: item.quantidade_itens || 1,
             tabela_preco_selecionada: item.tabela_preco_id || "",
             tabela_preco_selecionada_nome: item.tabela_preco || "",
@@ -135,22 +183,10 @@ export default function CampoItens({
     };
 
     const handleExcluirItem = (index) => {
-        const novosItens = itens.filter((_, i) => i !== index);
-        setItens(novosItens);
+        setItens(prev => prev.filter((_, i) => i !== index));
         toast.success("Item removido!");
     };
-
-    useEffect(() => {
-        if (Array.isArray(itens)) {
-            const novoTotalGeral = calcularTotal(itens);
-            setForm((prev) => ({
-                ...prev,
-                lista_itens: itens,
-                total: novoTotalGeral,
-            }));
-        }
-    }, [itens, setForm, precosDisponiveis]);
-
+    
     return (
         <div className="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
             <CampoDropdownDb
@@ -159,12 +195,10 @@ export default function CampoItens({
                 value={form.produto_selecionado || ""}
                 onChange={handleChange}
                 url={`${baseUrl}/produtos_dropdown`}
-                filtro={{ situacao: "Ativo" }}
                 campoValor="id"
                 campoLabel="descricao"
                 campoImagem="url_imagem"
-                // Garanta que este componente passe o objeto inteiro no 'onChange',
-                // por exemplo: onChange({ target: { ..., item: itemCompleto } })
+                passarItemCompleto
                 colSpan
             />
             <CampoNumSetas
@@ -172,6 +206,7 @@ export default function CampoItens({
                 name="quantidade_itens"
                 value={form.quantidade_itens || 1}
                 onChange={handleChange}
+                min={1}
             />
             <CampoDropdownDb
                 label="Tabela de Preço"
@@ -182,6 +217,7 @@ export default function CampoItens({
                 campoValor="id"
                 campoLabel="nome"
                 disabled={!form.produto_selecionado}
+                key={form.produto_selecionado} 
             />
             <div className="col-span-2 flex justify-end">
                 <button
@@ -193,8 +229,6 @@ export default function CampoItens({
                 </button>
             </div>
             {itens.length > 0 && (
-                // O componente TabelaItensAdicionados agora receberá itens com a propriedade 'sku'.
-                // Você precisará ajustar este componente para exibir essa nova coluna.
                 <TabelaItensAdicionados itens={itens} onEditar={handleEditarItem} onExcluir={handleExcluirItem} />
             )}
         </div>

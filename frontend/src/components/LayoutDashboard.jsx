@@ -38,7 +38,6 @@ export default function LayoutDashboard() {
       '/estoque': 'estoque',
       '/financeiro': 'financeiro',
       '/notas': 'notas',
-      '/regras-tributarias': 'notas', // <-- NOVA REGRA DE MENU
       '/empresa': 'empresa',
       '/intelipost': 'intelipost',
       '/integracoes': 'integracoes'
@@ -107,16 +106,16 @@ export default function LayoutDashboard() {
               titulo="Notas Fiscais"
               aberto={menuAberto === 'notas'}
               toggle={() => toggleMenu('notas')}
-              submenu={["Consultar NF-e", "Regras de Tributação"]}
+              submenu={["Consultar NF-e"]}
               sidebarAberta={sidebarAberta}
-              links={["/notas", "/regras-tributarias"]}
+              links={["/notas"]}
               location={location}
             />
           )}
 
           <div className="pt-4 mt-4 border-t border-gray-700"></div>
           {verificarPermissao(usuario, ['admin']) && (
-            <SidebarItem icone={<FaBuilding />} titulo="Empresa" aberto={menuAberto === 'empresa'} toggle={() => toggleMenu('empresa')} submenu={["Dados da Empresa", "Usuários"]} sidebarAberta={sidebarAberta} links={["/empresa/dados", "/empresa/usuarios"]} location={location} />
+            <SidebarItem icone={<FaBuilding />} titulo="Empresa" aberto={menuAberto === 'empresa'} toggle={() => toggleMenu('empresa')} submenu={["Dados da Empresa"]} sidebarAberta={sidebarAberta} links={["/empresa/dados"]} location={location} />
           )}
           {verificarPermissao(usuario, ['admin']) && (
             <SidebarItem icone={<FaStore />} titulo="Integrações" aberto={menuAberto === 'integracoes'} toggle={() => toggleMenu('integracoes')} submenu={["Mercado Livre", "Tray", "Intelipost"]} sidebarAberta={sidebarAberta} links={["/integracoes/mercadolivre", "/integracoes/tray", "/integracoes/intelipost"]} location={location} />

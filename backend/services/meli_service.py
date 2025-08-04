@@ -5,6 +5,7 @@ from fastapi import HTTPException, status
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from typing import Optional
+import asyncio
 
 from models.mercadolivre_model import MeliCredentials
 
@@ -107,31 +108,58 @@ class MeliAPIService:
         except httpx.HTTPStatusError as e:
             raise HTTPException(status_code=e.response.status_code, detail=f"Erro ao buscar tipos de anúncio: {e.response.json()}")
 
-    async def get_seller_items_by_sku(self) -> dict:
+    async def get_items_details(self, item_ids: list) -> list:
+        if not item_ids:
+            return []
         auth_header = await self._get_auth_header()
-        items_url = f"{self.base_url}/users/{self.user_id}/items/search"
-        params = {"status": "active,paused", "limit": 50, "offset": 0}
-        items_by_sku = {}
+        details_url = f"{self.base_url}/items"
+        params = {"ids": ",".join(item_ids), "attributes": "id,title,price,available_quantity,seller_sku,status,permalink"}
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                while True:
-                    response = await client.get(items_url, headers=auth_header, params=params)
-                    response.raise_for_status()
-                    data = response.json()
-                    item_ids = data.get("results", [])
-                    if not item_ids:
-                        break
-                    details = await self.get_items_details(item_ids)
-                    for item in details:
-                        sku = item.get("seller_sku")
-                        if sku:
-                            items_by_sku[sku] = { "id": item.get("id"), "title": item.get("title"), "price": item.get("price"), "available_quantity": item.get("available_quantity"), "status": item.get("status"), "permalink": item.get("permalink") }
-                    params["offset"] += len(item_ids)
-                    if params["offset"] >= data["paging"]["total"]:
-                        break
-            return items_by_sku
+            async with httpx.AsyncClient() as client:
+                response = await client.get(details_url, headers=auth_header, params=params)
+                response.raise_for_status()
+                return [item.get("body", {}) for item in response.json() if item.get("code") == 200]
         except httpx.HTTPStatusError as e:
-            raise HTTPException(status_code=e.response.status_code, detail=f"Erro ao buscar anúncios do vendedor: {e.response.json()}")
+            raise HTTPException(status_code=e.response.status_code, detail=f"Erro ao buscar detalhes dos itens: {e.response.json()}")
+    
+    # NOVO MÉTODO PAGINADO PARA ANÚNCIOS
+    async def get_seller_items_paged(self, limit: int, offset: int) -> dict:
+        """
+        Busca os anúncios do vendedor de forma paginada, retornando os detalhes
+        completos de cada item na página.
+        """
+        auth_header = await self._get_auth_header()
+        search_url = f"{self.base_url}/users/{self.user_id}/items/search"
+        
+        search_params = {
+            "status": "active,paused",
+            "limit": limit,
+            "offset": offset
+        }
+        
+        try:
+            # 1. Busca a lista de IDs da página atual
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                search_response = await client.get(search_url, headers=auth_header, params=search_params)
+                search_response.raise_for_status()
+                search_data = search_response.json()
+
+            item_ids_on_page = search_data.get("results", [])
+            paging_info = search_data.get("paging", {})
+
+            if not item_ids_on_page:
+                return {"paging": paging_info, "results": []}
+
+            # 2. Busca os detalhes completos para os IDs desta página
+            details_for_page = await self.get_items_details(item_ids_on_page)
+            
+            return {
+                "paging": paging_info,  
+                "results": details_for_page
+            }
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=f"Erro ao buscar anúncios paginados do vendedor: {e.response.json()}")
+
 
     async def get_items_details(self, item_ids: list) -> list:
         if not item_ids:
@@ -319,3 +347,27 @@ class MeliAPIService:
                 return response.json()
         except httpx.HTTPStatusError as e:
             raise HTTPException(status_code=e.response.status_code, detail=f"Erro ao enviar resposta: {e.response.json()}")
+        
+        
+    # ===================================================================
+    # NOVO MÉTODO PARA VINCULAR UM ANÚNCIO (ATUALIZAR SKU)
+    # ===================================================================
+    async def update_item_sku(self, meli_item_id: str, sku: str):
+        """
+        Atualiza o campo seller_sku de um anúncio existente no Mercado Livre.
+        """
+        auth_header = await self._get_auth_header()
+        url = f"{self.base_url}/items/{meli_item_id}"
+        payload = {"seller_sku": sku}
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.put(url, headers=auth_header, json=payload)
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPStatusError as e:
+            error_body = e.response.json()
+            raise HTTPException(
+                status_code=e.response.status_code, 
+                detail=f"Erro ao vincular SKU: {error_body.get('message', 'Erro desconhecido.')}"
+            )

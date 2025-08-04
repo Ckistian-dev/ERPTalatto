@@ -24,14 +24,16 @@ from controllers import (
     produtos_controller, 
     orcamento_controller, 
     pedidos_controller, 
-    nfe_controller, 
     contas_controller,
     dashboard_controller,
     estoque_controller,
     empresa_controller,
     regras_controller,
     embalagem_controller,
-    usuarios_controller
+    usuarios_controller,
+    nfe_webmania_controller,
+    tray_controller,
+    intelipost_controller
 )
 
 # --- Importação dos Controladores ---
@@ -69,7 +71,7 @@ app.add_middleware(
 
 # --- Inclusão das Rotas dos Controladores ---
 app.include_router(auth_controller.router, prefix="/auth", tags=["auth"])
-app.include_router(empresa_controller.router, prefix="/api")
+app.include_router(empresa_controller.router)
 app.include_router(regras_controller.router, prefix="/api")
 app.include_router(usuarios_controller.router)
 app.include_router(embalagem_controller.router) 
@@ -80,7 +82,7 @@ app.include_router(produtos_controller.router)
 app.include_router(opcao_controller.router)
 app.include_router(orcamento_controller.router)
 app.include_router(pedidos_controller.router)
-app.include_router(nfe_controller.router)
+app.include_router(nfe_webmania_controller.router)
 app.include_router(contas_controller.router)
 app.include_router(estoque_controller.router)
 
@@ -90,6 +92,11 @@ app.include_router(mercadolivre_controller.router)
 app.include_router(mercadolivre_gerenciador_controller.router)
 app.include_router(mercadolivre_webhooks_controller.router)
 
+# --- Inclusão das Rotas dos Controladores (Tray) ---
+app.include_router(tray_controller.router)
+
+# --- Inclusão das Rotas dos Controladores (Intelipost) ---
+app.include_router(intelipost_controller.router)
 
 @app.get("/", tags=["Root"])
 def read_root():

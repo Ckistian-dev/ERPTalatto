@@ -9,20 +9,20 @@ import LayoutDashboard from './components/LayoutDashboard';
 // Importe suas páginas
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
-import ListarCadastros from "./pages/ListarCadastros";
-import ListarProdutos from "./pages/ListarProdutos";
-import CadastroGeral from "./pages/CadastroGeral";
-import CadastroProdutos from "./pages/CadastroProdutos";
-import CadastroOrcamento from "./pages/CadastroOrcamento";
-import CadastroPedidos from "./pages/CadastroPedidos";
-import ListarPedidos from "./pages/ListarPedidos";
-import ListarOrcamento from "./pages/ListarOrcamento";
-import AprovarPedido from "./pages/AprovarPedido";
-import ProgramarPedido from "./pages/ProgramarPedido";
-import ProduzirPedido from "./pages/ProduzirPedido";
-import EmbalarPedido from "./pages/EmbalarPedido";
-import FaturarPedido from "./pages/FaturarPedido";
-import ExpedirPedido from "./pages/ExpedirPedido";
+import ListarCadastros from "./pages/cadastros/ListarCadastros";
+import ListarProdutos from "./pages/produtos/ListarProdutos";
+import CadastroGeral from "./pages/cadastros/CadastroGeral";
+import CadastroProdutos from "./pages/produtos/CadastroProdutos";
+import CadastroOrcamento from "./pages/orcamento/CadastroOrcamento";
+import CadastroPedidos from "./pages/pedidos/CadastroPedidos";
+import ListarPedidos from "./pages/pedidos/ListarPedidos";
+import ListarOrcamento from "./pages/orcamento/ListarOrcamento";
+import AprovarPedido from "./pages/pedidos/AprovarPedido";
+import ProgramarPedido from "./pages/pedidos/ProgramarPedido";
+import ProduzirPedido from "./pages/pedidos/ProduzirPedido";
+import EmbalarPedido from "./pages/pedidos/EmbalarPedido";
+import FaturarPedido from "./pages/pedidos/FaturarPedido";
+import ExpedirPedido from "./pages/pedidos/ExpedirPedido";
 import CadastroContas from "./pages/financeiro/CadastroContas";
 import ListarContas from "./pages/financeiro/ListarContas";
 import ConsultaNFE from "./pages/ConsultaNFE";
@@ -30,13 +30,13 @@ import ConsultaEstoque from "./pages/estoque/ConsultaEstoque";
 import CadastroPosicaoEstoque from "./pages/estoque/CadastroPosicaoEstoque";
 import SaidaEstoque from "./pages/estoque/SaidaEstoque";
 import InfoEmpresaPage from "./pages/InfoEmpresaPage";
-import RegrasTributariasPage from "./pages/RegrasTributariasPage";
 import RegrasEmbalagem from "./pages/embalagem/RegrasEmbalagem";
 import ListaLogicasEmbalagem from "./pages/embalagem/ListaLogicasEmbalagem";
-import CotacaoIntelipost from "./pages/intelipost/CotacaoIntelipost";
 import CadastroUsuario from "./pages/usuario/CadastroUsuario";
 import ListaUsuarios from "./pages/usuario/ListaUsuarios";
-import IntegracaoMercadoLivrePage from './pages/IntegracaoMercadoLivrePage';
+import IntegracaoMercadoLivrePage from './pages/integracoes/IntegracaoMercadoLivrePage';
+import IntegracaoTrayPage from './pages/integracoes/IntegracaoTrayPage';
+import IntegracaoIntelipostPage from './pages/integracoes/IntegracaoIntelipostPage';
 
 function App() {
   return (
@@ -49,7 +49,7 @@ function App() {
           {/* Rota pai protegida. Se o usuário não estiver logado, será redirecionado. */}
           {/* Todas as rotas filhas abaixo herdam essa proteção. */}
           <Route path="/" element={<PrivateRoute><LayoutDashboard /></PrivateRoute>}>
-            
+
             {/* As rotas filhas não precisam mais do PrivateRoute */}
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/cadastros" element={<ListarCadastros />} />
@@ -83,12 +83,12 @@ function App() {
             <Route path="/embalagem/novo" element={<RegrasEmbalagem />} />
             <Route path="/embalagem/editar" element={<RegrasEmbalagem modo="editar" />} />
             <Route path="/embalagem" element={<ListaLogicasEmbalagem />} />
-            <Route path="/integracoes/intelipost" element={<CotacaoIntelipost />} />
-            <Route path="/regras-tributarias" element={<RegrasTributariasPage />} />
             <Route path="/usuario/novo" element={<CadastroUsuario />} />
-            <Route path="/usuario/editar" element={<CadastroUsuario modo="editar"/>} />
+            <Route path="/usuario/editar" element={<CadastroUsuario modo="editar" />} />
             <Route path="/usuario" element={<ListaUsuarios />} />
             <Route path="/integracoes/mercadolivre" element={<IntegracaoMercadoLivrePage />} />
+            <Route path="/integracoes/tray" element={<IntegracaoTrayPage />} />
+            <Route path="/integracoes/intelipost" element={<IntegracaoIntelipostPage />} />
 
           </Route>
         </Routes>

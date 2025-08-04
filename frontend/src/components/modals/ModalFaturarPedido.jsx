@@ -1,49 +1,59 @@
 // /components/modals/ModalFaturarPedido.jsx
 
 import { useState, useEffect, useCallback } from 'react';
-import { X, FileText, FilePlus, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { X, FileText, FilePlus, AlertCircle, CheckCircle, Loader2, Send } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 
-// O componente CampoTextsimples pode ser mantido como está.
 import CampoTextsimples from '@/components/campos/CampoTextsimples';
 
 export default function ModalFaturarPedido({
     onClose,
     onConfirmarFaturamento,
-    onErro,
-    onNfeGeradaSucesso, // Callback para atualizar a lista na página pai
+    onNfeProcessando, // Novo callback para indicar que a NF-e foi enviada
     pedidoSelecionado,
     API_URL
 }) {
-    // Estados para gerenciar o fluxo assíncrono
-    const [statusNfe, setStatusNfe] = useState('INICIAL'); // INICIAL, ENVIANDO, CONSULTANDO, AUTORIZADO, REJEITADO, ERRO
+    // Estados para gerenciar o fluxo da UI
+    const [statusEnvio, setStatusEnvio] = useState('INICIAL'); // INICIAL, ENVIANDO, SUCESSO, ERRO
     const [mensagem, setMensagem] = useState('');
     const [numeroNfExibicao, setNumeroNfExibicao] = useState('');
-    
+
     // Função para tratar erros de forma centralizada
     const handleError = useCallback((errorMsg) => {
-        setStatusNfe('ERRO');
+        setStatusEnvio('ERRO');
         setMensagem(errorMsg);
-        onErro?.(errorMsg);
-    }, [onErro]);
+        toast.error(errorMsg);
+    }, []);
 
     // Função para ENVIAR a NF-e para o backend
     const enviarNfe = async () => {
         if (!pedidoSelecionado?.id) {
-            handleError("ID do Pedido não encontrado para gerar NF-e.");
+            handleError("ID do Pedido não encontrado.");
             return;
         }
-        setStatusNfe('ENVIANDO');
-        setMensagem('Enviando NF-e para a SEFAZ...');
+        setStatusEnvio('ENVIANDO');
+        setMensagem('Enviando NF-e para processamento...');
         try {
-            const response = await axios.post(`${API_URL}/nfe/emitir`, { pedido_id: pedidoSelecionado.id });
+            // Usa o novo endpoint da API Webmania
+            const response = await axios.post(`${API_URL}/nfe-webmania/emitir`, { pedido_id: pedidoSelecionado.id });
             const data = response.data;
-            if (data.status === 'AGUARDANDO_CONSULTA') {
-                // Notifica o pai para atualizar o pedido com o status inicial e o recibo
-                onNfeGeradaSucesso?.({ pedido_id: pedidoSelecionado.id, nfe_status: 'AGUARDANDO_CONSULTA', nfe_recibo: data.recibo });
-                setStatusNfe('CONSULTANDO');
-                setMensagem(`NF-e em processamento. Consultando automaticamente...`);
+
+            if (data.status === 'PROCESSANDO') {
+                setStatusEnvio('SUCESSO');
+                setMensagem('NF-e enviada com sucesso! O status será atualizado em breve.');
+                toast.success('NF-e enviada para processamento!');
+                
+                // Notifica o componente pai para atualizar a UI
+                onNfeProcessando?.({ 
+                    pedido_id: pedidoSelecionado.id, 
+                    nfe_status: 'PROCESSANDO', 
+                    nfe_uuid: data.uuid 
+                });
+                
+                // Fecha o modal após um curto período
+                setTimeout(() => onClose(), 2000);
+
             } else {
                 handleError(data.message || "Resposta inesperada do servidor.");
             }
@@ -52,84 +62,39 @@ export default function ModalFaturarPedido({
         }
     };
 
-    // Função para CONSULTAR o status do pedido
-    const consultarStatus = useCallback(async () => {
-        if (!pedidoSelecionado?.id) return 'finalizado';
-
-        try {
-            const response = await axios.post(`${API_URL}/nfe/consultar/${pedidoSelecionado.id}`);
-            const data = response.data;
-
-            if (data.status === 'AUTORIZADO') {
-                setStatusNfe('AUTORIZADO');
-                setMensagem(`NF-e AUTORIZADA! Número: ${data.numero_nf}.`);
-                setNumeroNfExibicao(`NF-e: ${data.numero_nf}`);
-                onNfeGeradaSucesso?.({ pedido_id: pedidoSelecionado.id, nfe_status: 'AUTORIZADO', numero_nf: data.numero_nf, data_nf: new Date().toISOString(), nfe_chave: data.chave_nfe });
-                return 'finalizado';
-            } else if (data.status === 'REJEITADO') {
-                handleError(`NF-e Rejeitada: ${data.message}`);
-                onNfeGeradaSucesso?.({ pedido_id: pedidoSelecionado.id, nfe_status: 'REJEITADO', nfe_rejeicao_motivo: data.message });
-                return 'finalizado';
-            } else if (data.status === 'ERRO_CONSULTA') {
-                handleError(`Erro na consulta: ${data.message}`);
-                return 'finalizado';
-            }
-            else { // EM_PROCESSAMENTO
-                setMensagem("Aguardando resposta da SEFAZ... Nova consulta em 10 segundos.");
-                return 'continuar';
-            }
-        } catch (error) {
-            handleError(error.response?.data?.detail || "Erro de comunicação ao consultar NF-e.");
-            return 'finalizado';
-        }
-    }, [pedidoSelecionado?.id, API_URL, onNfeGeradaSucesso, handleError]);
-
     // Efeito para configurar o estado inicial do Modal
     useEffect(() => {
         if (pedidoSelecionado?.nfe_status === 'AUTORIZADO') {
-            setStatusNfe('AUTORIZADO');
+            setStatusEnvio('SUCESSO');
             setNumeroNfExibicao(`NF-e: ${pedidoSelecionado.numero_nf}`);
             setMensagem('Este pedido já possui uma NF-e autorizada.');
-        } else if (pedidoSelecionado?.nfe_status === 'AGUARDANDO_CONSULTA') {
-            setStatusNfe('CONSULTANDO');
-            setMensagem('Este pedido já foi enviado. Verificando status...');
-        } else if (pedidoSelecionado?.nfe_status === 'REJEITADO' || pedidoSelecionado?.nfe_status === 'ERRO_ENVIO' || pedidoSelecionado?.nfe_status === 'ERRO_CONSULTA') {
-            setStatusNfe('ERRO');
+        } else if (pedidoSelecionado?.nfe_status === 'PROCESSANDO') {
+            setStatusEnvio('INICIAL');
+            setNumeroNfExibicao('Processando...');
+            setMensagem('A NF-e deste pedido já está em processamento.');
+        } else if (pedidoSelecionado?.nfe_status === 'REJEITADO') {
+            setStatusEnvio('ERRO');
             setMensagem(`Falha anterior: ${pedidoSelecionado.nfe_rejeicao_motivo || 'Tente enviar novamente.'}`);
         } else {
-            setStatusNfe('INICIAL');
+            setStatusEnvio('INICIAL');
             setMensagem('Pronto para iniciar a emissão da NF-e.');
         }
     }, [pedidoSelecionado]);
 
-    // Efeito para controlar o polling (a consulta periódica)
-    useEffect(() => {
-        let timer;
-        if (statusNfe === 'CONSULTANDO') {
-            timer = setTimeout(async () => {
-                const resultado = await consultarStatus();
-                if (resultado === 'continuar') {
-                    // Se a consulta deve continuar, forçamos um re-render para manter o loop
-                    // de forma segura, alterando o estado para ele mesmo.
-                    setStatusNfe('CONSULTANDO');
-                }
-            }, 10000); // Consulta a cada 10 segundos
-        }
-        // Limpa o timeout se o componente for desmontado ou o status mudar
-        return () => clearTimeout(timer);
-    }, [statusNfe, consultarStatus]);
-
     const getStatusIcon = () => {
-        if (statusNfe === 'ENVIANDO' || statusNfe === 'CONSULTANDO') return <Loader2 size={20} className="animate-spin mr-2" />;
-        if (statusNfe === 'AUTORIZADO') return <CheckCircle size={18} className="mr-2 flex-shrink-0" />;
-        if (statusNfe === 'ERRO' || statusNfe === 'REJEITADO') return <AlertCircle size={18} className="mr-2 flex-shrink-0" />;
+        if (statusEnvio === 'ENVIANDO') return <Loader2 size={20} className="animate-spin mr-2" />;
+        if (statusEnvio === 'SUCESSO') return <CheckCircle size={18} className="mr-2 flex-shrink-0" />;
+        if (statusEnvio === 'ERRO') return <AlertCircle size={18} className="mr-2 flex-shrink-0" />;
         return null;
     };
     const getStatusColor = () => {
-        if (statusNfe === 'AUTORIZADO') return 'bg-green-50 border-green-200 text-green-700';
-        if (statusNfe === 'ERRO' || statusNfe === 'REJEITADO') return 'bg-red-50 border-red-200 text-red-700';
+        if (statusEnvio === 'SUCESSO') return 'bg-green-50 border-green-200 text-green-700';
+        if (statusEnvio === 'ERRO') return 'bg-red-50 border-red-200 text-red-700';
         return 'bg-blue-50 border-blue-200 text-blue-700';
     }
+
+    // O botão de confirmar faturamento agora só é relevante se a nota já estiver autorizada
+    const podeConfirmarFaturamento = pedidoSelecionado?.nfe_status === 'AUTORIZADO';
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -161,32 +126,32 @@ export default function ModalFaturarPedido({
                 <div className="mt-6 space-y-3">
                     <button
                         onClick={enviarNfe}
-                        disabled={statusNfe !== 'INICIAL' && statusNfe !== 'ERRO'}
+                        disabled={statusEnvio === 'ENVIANDO' || statusEnvio === 'SUCESSO' || pedidoSelecionado?.nfe_status === 'AUTORIZADO' || pedidoSelecionado?.nfe_status === 'PROCESSANDO'}
                         className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors disabled:bg-indigo-300 disabled:cursor-not-allowed"
                     >
-                        <FilePlus size={18} />
-                        {statusNfe === 'ERRO' ? 'Tentar Enviar Novamente' : 'Gerar e Enviar NF-e'}
+                        <Send size={18} />
+                        {statusEnvio === 'ERRO' ? 'Tentar Enviar Novamente' : 'Enviar NF-e para Processamento'}
                     </button>
                     
                     <div className="flex flex-col sm:flex-row gap-3">
                         <button
                             onClick={onClose}
-                            className="w-full sm:w-auto bg-gray-200 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
+                            className="w-full sm:w-auto bg-gray-200 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-300"
                         >
-                            Cancelar
+                            {podeConfirmarFaturamento ? 'Fechar' : 'Cancelar'}
                         </button>
                         <button
                             onClick={onConfirmarFaturamento}
-                            disabled={statusNfe !== 'AUTORIZADO'}
+                            disabled={!podeConfirmarFaturamento}
                             className="w-full sm:flex-1 bg-teal-600 text-white px-5 py-2.5 rounded-lg hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 transition-colors disabled:bg-teal-300 disabled:cursor-not-allowed"
                         >
-                            Confirmar Faturamento
+                            Confirmar Faturamento e Mover
                         </button>
                     </div>
                 </div>
 
                 <div className="mt-4 text-xs text-gray-500">
-                    <p><strong>Nota:</strong> Após o envio, o sistema consultará o status na SEFAZ automaticamente a cada 10 segundos.</p>
+                    <p><strong>Nota:</strong> Após o envio, o status será atualizado automaticamente quando a SEFAZ autorizar a nota.</p>
                 </div>
             </div>
         </div>
