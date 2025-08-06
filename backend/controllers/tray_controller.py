@@ -5,7 +5,7 @@ import httpx
 import traceback
 import mysql.connector.pooling
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Request, BackgroundTasks
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse # Adicionada a importação de HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from typing import Optional, List, Dict, Any
@@ -51,6 +51,60 @@ class EnvioPedidoPayload(BaseModel):
 #     ENDPOINTS DE AUTENTICAÇÃO E STATUS
 # ==================================
 
+@router.get("/tray", summary="Página de Início da Autorização Tray", response_class=HTMLResponse)
+async def start_tray_auth_page(
+    request: Request,
+    url: str = Query(..., alias="url"), # O domínio da loja vindo da Tray
+    db: Session = Depends(get_db)
+):
+    """
+    Esta é a página de aterrissagem para onde o lojista é redirecionado
+    após instalar o aplicativo na Tray. Ela apresenta um botão para
+    iniciar o fluxo de autorização OAuth.
+    """
+    config = db.query(TrayConfiguracao).filter(TrayConfiguracao.id == 1).first()
+    if not config or not config.tray_consumer_key:
+        raise HTTPException(
+            status_code=500,
+            detail="Consumer Key da aplicação Tray não configurado no sistema."
+        )
+
+    # A URL de callback da nossa API que a Tray deve chamar após a autorização.
+    # É crucial que esta URL esteja registrada no seu painel de parceiro Tray.
+    callback_url = str(request.url_for('tray_auth_callback'))
+
+    # Constrói a URL de autorização para a qual o lojista será redirecionado
+    auth_url = f"{url}/auth.php?response_type=code&consumer_key={config.tray_consumer_key}&callback={callback_url}"
+
+    # Retorna uma página HTML simples com o botão para autorizar
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Autorizar Integração com ERP</title>
+        <style>
+            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f4f5f7; }}
+            .container {{ text-align: center; background-color: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
+            h1 {{ color: #172b4d; }}
+            p {{ color: #42526e; max-width: 400px; margin: 20px auto; }}
+            a.button {{ display: inline-block; background-color: #0052cc; color: white; padding: 12px 24px; border-radius: 4px; text-decoration: none; font-weight: 600; transition: background-color 0.2s; }}
+            a.button:hover {{ background-color: #0065ff; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Concluir Integração com a Tray</h1>
+            <p>Você está quase lá! Clique no botão abaixo para autorizar a conexão entre sua loja Tray e o seu sistema ERP.</p>
+            <a href="{auth_url}" class="button">Autorizar Conexão</a>
+        </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+
+
 @router.get("/tray/status", summary="Verifica o status da conexão com a Tray")
 async def get_integration_status(db: Session = Depends(get_db)):
     try:
@@ -73,7 +127,7 @@ async def get_integration_status(db: Session = Depends(get_db)):
         traceback.print_exc()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro interno: {e}")
 
-@router.get("/tray", summary="Callback de Autenticação da Tray")
+@router.get("/tray/callback", summary="Callback de Autenticação da Tray")
 async def tray_auth_callback(code: str = Query(...), api_address: str = Query(...), db: Session = Depends(get_db)):
     config = db.query(TrayConfiguracao).filter(TrayConfiguracao.id == 1).first()
     if not config or not config.tray_consumer_key or not config.tray_consumer_secret:
@@ -122,7 +176,8 @@ async def tray_auth_callback(code: str = Query(...), api_address: str = Query(..
                 db.add(new_credentials)
             
             db.commit()
-            return TrayAuthSuccessResponse(store_id=store_id)
+            # Em um cenário real, você redirecionaria para uma página de sucesso no seu frontend.
+            return JSONResponse(content={"message": f"Loja {store_id} conectada com sucesso!"})
 
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=e.response.status_code, detail=f"Erro de comunicação ao obter token da Tray: {e.response.text}")
@@ -428,7 +483,6 @@ async def process_order_notification(store_id: int, order_id: int, db: Session):
         tray_service = TrayAPIService(store_id=store_id, db=db)
         order_details = await tray_service.get_order_details(order_id)
         
-        # O status "Pagamento aprovado" na Tray geralmente tem o ID '5'
         if order_details.get('status_id') != '5': 
             print(f"Pedido {order_id} não está com status 'Pagamento aprovado'. Importação ignorada.")
             return
