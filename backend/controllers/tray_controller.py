@@ -140,19 +140,23 @@ async def tray_auth_callback(code: str = Query(...), api_address: str = Query(..
     }
     
     try:
-        # CORREÇÃO: Define o `api_address` como base_url para o cliente httpx.
-        # Isso garante que a junção de URLs seja feita de forma segura e correta.
-        async with httpx.AsyncClient(base_url=api_address) as client:
-            # A chamada agora é para o caminho relativo "/auth"
-            response = await client.post("/auth", data=payload)
+        async with httpx.AsyncClient() as client:
+            # CORREÇÃO: Construção manual e segura da URL para evitar barras duplas.
+            # Garante que a URL base não tenha uma barra no final antes de concatenar.
+            base_api_url = api_address.rstrip('/')
+            
+            token_url = f"{base_api_url}/auth"
+            response = await client.post(token_url, data=payload)
             response.raise_for_status()
             token_data = response.json()
 
             if 'code' in token_data and token_data['code'] not in [200, 201]:
                 raise HTTPException(status_code=400, detail=f"Erro da API Tray ao obter token: {token_data.get('message', 'Resposta inválida')}")
 
-            # A chamada para "/informations" também usará a base_url do cliente
-            info_response = await client.get(f"/informations?access_token={token_data['access_token']}")
+            # Usa a mesma base segura para a chamada de informações
+            info_url = f"{base_api_url}/informations"
+            params = {"access_token": token_data['access_token']}
+            info_response = await client.get(info_url, params=params)
             info_response.raise_for_status()
             store_data = info_response.json()
             

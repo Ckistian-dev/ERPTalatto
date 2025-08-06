@@ -275,41 +275,62 @@ async def get_meli_orders(
 # NOVO ENDPOINT PARA IMPORTAÇÂO DE PEDIDOS
 # ===================================================================    
     
-async def _find_or_create_customer(buyer_id: int, meli_service: MeliAPIService) -> dict:
+async def _find_or_create_customer(buyer_id: int, ml_order_shipping: dict, meli_service: MeliAPIService) -> dict:
     """
     Busca os dados completos do comprador. Verifica se ele já existe no ERP pelo documento.
     Se não, cria um novo cadastro. Retorna o ID e o nome do cliente no ERP.
     """
-    # 1. Busca os dados completos do comprador no ML
     buyer_data = await meli_service.get_user_details(buyer_id)
     doc_number = buyer_data.get('identification', {}).get('number')
-    
+    email = buyer_data.get('email')
+
     if not doc_number:
-        # Se mesmo na API de usuário não vier o documento, usamos um ID placeholder
         doc_number = f"ML{buyer_id}"
 
     conn = pool.get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        # 2. Verifica se o cliente já existe pelo CPF/CNPJ
         cursor.execute("SELECT id, nome_razao FROM cadastros WHERE cpf_cnpj = %s", (doc_number,))
         existing_customer = cursor.fetchone()
         if existing_customer:
             print(f"Cliente encontrado no ERP pelo documento: ID {existing_customer['id']}")
             return existing_customer
 
-        # 3. Se não existe, cria um novo cadastro
         print(f"Cliente com documento {doc_number} não encontrado. Criando novo cadastro...")
+        shipping_address = ml_order_shipping.get('receiver_address', {})
+        cep = shipping_address.get('zip_code', '').replace('-', '')
         
+        address_from_cep = {}
+        if cep and len(cep) == 8:
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(f"https://viacep.com.br/ws/{cep}/json/")
+                    response.raise_for_status()
+                    cep_data = response.json()
+                    if not cep_data.get('erro'):
+                        address_from_cep = {
+                            "logradouro": cep_data.get('logradouro'), "bairro": cep_data.get('bairro'),
+                            "cidade": cep_data.get('localidade'), "estado": cep_data.get('uf'),
+                            "codigo_ibge_cidade": cep_data.get('ibge')
+                        }
+            except Exception as e:
+                print(f"AVISO: Falha ao consultar ViaCEP para o CEP {cep}. Erro: {e}")
+
         new_customer_payload = {
             "nome_razao": f"{buyer_data.get('first_name', '')} {buyer_data.get('last_name', '')}".strip(),
             "tipo_pessoa": "Pessoa Jurídica" if buyer_data.get('identification', {}).get('type') == 'CNPJ' else "Pessoa Física",
             "tipo_cadastro": "Cliente",
             "celular": buyer_data.get('phone', {}).get('area_code', '') + buyer_data.get('phone', {}).get('number', ''),
-            "email": buyer_data.get('email', f"ml_cliente_{buyer_id}@email.com"),
+            "email": email or f"ml_cliente_{buyer_id}@email.com",
             "cpf_cnpj": doc_number,
-            "logradouro": "Não informado", "numero": "S/N", "bairro": "Não informado",
-            "cep": "00000000", "cidade": "Não informada", "estado": "NI",
+            "logradouro": shipping_address.get('street_name') or address_from_cep.get('logradouro') or 'Não informado',
+            "numero": shipping_address.get('street_number') or 'S/N',
+            "complemento": shipping_address.get('comment'),
+            "bairro": shipping_address.get('neighborhood', {}).get('name') or address_from_cep.get('bairro') or 'Não informado',
+            "cep": cep,
+            "cidade": shipping_address.get('city', {}).get('name') or address_from_cep.get('cidade') or 'Não informada',
+            "estado": shipping_address.get('state', {}).get('id') or address_from_cep.get('estado') or 'NI',
+            "codigo_ibge_cidade": address_from_cep.get('codigo_ibge_cidade'),
             "situacao": "Ativo", "indicador_ie": "9"
         }
 
@@ -334,7 +355,7 @@ async def _transform_ml_order_to_erp_pedido(ml_order: dict, meli_service: MeliAP
     if not config:
         raise HTTPException(status_code=500, detail="Configurações da integração não encontradas.")
 
-    customer_erp = await _find_or_create_customer(ml_order['buyer']['id'], meli_service)
+    customer_erp = await _find_or_create_customer(ml_order['buyer']['id'], ml_order.get('shipping', {}), meli_service)
 
     lista_itens_erp = []
     for item_ml in ml_order.get('order_items', []):
@@ -353,9 +374,15 @@ async def _transform_ml_order_to_erp_pedido(ml_order: dict, meli_service: MeliAP
             cursor.close()
             conn.close()
         
+        produto_nome_final = produto_erp['descricao']
+        variation_attrs = item_ml.get('item', {}).get('variation_attributes', [])
+        if variation_attrs:
+            variacao_str = ", ".join([f"{attr['value_name']}" for attr in variation_attrs])
+            produto_nome_final = f"{produto_erp['descricao']} ({variacao_str})"
+
         lista_itens_erp.append({
             "produto_id": produto_erp['id'],
-            "produto": produto_erp['descricao'],
+            "produto": produto_nome_final,
             "quantidade_itens": item_ml['quantity'],
             "tabela_preco_id": "PADRAO", "tabela_preco": "PADRAO",
             "subtotal": float(item_ml['unit_price']) * item_ml['quantity']
@@ -414,7 +441,7 @@ async def import_meli_order_to_erp(order_id: int, db: Session = Depends(get_db))
             api_host = os.getenv("API_HOST", "http://localhost:8000")
             response = await client.post(f"{api_host}/pedidos", json=erp_pedido_payload)
             
-            if response.status_code != 201: # Espera um 201 Created
+            if response.status_code != 201:
                  raise HTTPException(status_code=response.status_code, detail=f"Erro ao criar pedido no ERP: {response.text}")
 
         return {"message": "Pedido importado para o ERP com sucesso!", "erp_pedido": response.json()}
