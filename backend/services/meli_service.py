@@ -386,3 +386,24 @@ class MeliAPIService:
                 status_code=e.response.status_code, 
                 detail=f"Erro ao vincular SKU: {error_body.get('message', 'Erro desconhecido.')}"
             )
+            
+    # ===================================================================
+    # NOVO MÉTODO PARA BUSCAR DADOS COMPLETOS DE UM USUÁRIO (COMPRADOR)
+    # ===================================================================
+    async def get_user_details(self, user_id: int) -> dict:
+        """
+        Busca os detalhes de um usuário específico (comprador) pelo seu ID.
+        """
+        auth_header = await self._get_auth_header()
+        url = f"{self.base_url}/users/{user_id}"
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers=auth_header)
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"Erro ao buscar dados do comprador ID {user_id}: {e.response.json()}"
+            )

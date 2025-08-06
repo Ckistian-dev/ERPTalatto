@@ -275,82 +275,45 @@ async def get_meli_orders(
 # NOVO ENDPOINT PARA IMPORTAÇÂO DE PEDIDOS
 # ===================================================================    
     
-async def _find_or_create_customer(ml_order: dict) -> dict:
+async def _find_or_create_customer(buyer_id: int, meli_service: MeliAPIService) -> dict:
     """
-    Verifica se o comprador do ML já existe no ERP (por documento ou email). 
-    Se não, cria um novo cadastro, buscando o endereço completo pelo CEP.
-    Retorna um dicionário com 'id' e 'nome_razao' do cliente no ERP.
+    Busca os dados completos do comprador. Verifica se ele já existe no ERP pelo documento.
+    Se não, cria um novo cadastro. Retorna o ID e o nome do cliente no ERP.
     """
-    buyer = ml_order.get('buyer', {})
-    billing_info = buyer.get('billing_info', {})
-    doc_number = billing_info.get('doc_number')
-    email = buyer.get('email')
+    # 1. Busca os dados completos do comprador no ML
+    buyer_data = await meli_service.get_user_details(buyer_id)
+    doc_number = buyer_data.get('identification', {}).get('number')
+    
+    if not doc_number:
+        # Se mesmo na API de usuário não vier o documento, usamos um ID placeholder
+        doc_number = f"ML{buyer_id}"
 
     conn = pool.get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        # 1. Tenta encontrar o cliente pelo CPF/CNPJ, se existir
-        if doc_number:
-            cursor.execute("SELECT id, nome_razao FROM cadastros WHERE cpf_cnpj = %s", (doc_number,))
-            existing_customer = cursor.fetchone()
-            if existing_customer:
-                print(f"Cliente encontrado no ERP pelo documento: ID {existing_customer['id']}")
-                return existing_customer
-        
-        # 2. Se não encontrou pelo documento, tenta pelo e-mail
-        if email:
-            cursor.execute("SELECT id, nome_razao FROM cadastros WHERE email = %s", (email,))
-            existing_customer = cursor.fetchone()
-            if existing_customer:
-                print(f"Cliente encontrado no ERP pelo e-mail: ID {existing_customer['id']}")
-                return existing_customer
+        # 2. Verifica se o cliente já existe pelo CPF/CNPJ
+        cursor.execute("SELECT id, nome_razao FROM cadastros WHERE cpf_cnpj = %s", (doc_number,))
+        existing_customer = cursor.fetchone()
+        if existing_customer:
+            print(f"Cliente encontrado no ERP pelo documento: ID {existing_customer['id']}")
+            return existing_customer
 
         # 3. Se não existe, cria um novo cadastro
-        print(f"Cliente não encontrado. Criando novo cadastro para {buyer.get('nickname')}")
-        shipping_address = ml_order.get('shipping', {}).get('receiver_address', {})
-        cep = shipping_address.get('zip_code', '').replace('-', '')
+        print(f"Cliente com documento {doc_number} não encontrado. Criando novo cadastro...")
         
-        # --- LÓGICA DE BUSCA VIA CEP ---
-        address_from_cep = {}
-        if cep and len(cep) == 8:
-            try:
-                async with httpx.AsyncClient() as client:
-                    response = await client.get(f"https://viacep.com.br/ws/{cep}/json/")
-                    response.raise_for_status()
-                    cep_data = response.json()
-                    if not cep_data.get('erro'):
-                        address_from_cep = {
-                            "logradouro": cep_data.get('logradouro'),
-                            "bairro": cep_data.get('bairro'),
-                            "cidade": cep_data.get('localidade'),
-                            "estado": cep_data.get('uf'),
-                            "codigo_ibge_cidade": cep_data.get('ibge')
-                        }
-                        print(f"Endereço encontrado para o CEP {cep}: {address_from_cep}")
-            except Exception as e:
-                print(f"AVISO: Falha ao consultar ViaCEP para o CEP {cep}. Erro: {e}")
-        # --- FIM DA LÓGICA VIA CEP ---
-
         new_customer_payload = {
-            "nome_razao": f"{buyer.get('first_name', '')} {buyer.get('last_name', '')}".strip(),
-            "tipo_pessoa": "Pessoa Jurídica" if doc_number and len(doc_number) == 14 else "Pessoa Física",
+            "nome_razao": f"{buyer_data.get('first_name', '')} {buyer_data.get('last_name', '')}".strip(),
+            "tipo_pessoa": "Pessoa Jurídica" if buyer_data.get('identification', {}).get('type') == 'CNPJ' else "Pessoa Física",
             "tipo_cadastro": "Cliente",
-            "celular": buyer.get('phone', {}).get('number'),
-            "email": email or f"ml_cliente_{buyer.get('id')}@email.com",
+            "celular": buyer_data.get('phone', {}).get('area_code', '') + buyer_data.get('phone', {}).get('number', ''),
+            "email": buyer_data.get('email', f"ml_cliente_{buyer_id}@email.com"),
             "cpf_cnpj": doc_number,
-            "logradouro": shipping_address.get('street_name') or address_from_cep.get('logradouro') or 'Não informado',
-            "numero": shipping_address.get('street_number') or 'S/N',
-            "complemento": shipping_address.get('comment'),
-            "bairro": shipping_address.get('neighborhood', {}).get('name') or address_from_cep.get('bairro') or 'Não informado',
-            "cep": cep,
-            "cidade": shipping_address.get('city', {}).get('name') or address_from_cep.get('cidade') or 'Não informada',
-            "estado": shipping_address.get('state', {}).get('id') or address_from_cep.get('estado') or 'NI',
-            "codigo_ibge_cidade": address_from_cep.get('codigo_ibge_cidade'),
-            "situacao": "Ativo",
-            "indicador_ie": "9"
+            "logradouro": "Não informado", "numero": "S/N", "bairro": "Não informado",
+            "cep": "00000000", "cidade": "Não informada", "estado": "NI",
+            "situacao": "Ativo", "indicador_ie": "9"
         }
 
-        columns = ", ".join(new_customer_payload.keys())
+        columns = ", ".join(f"`{k}`" for k in new_customer_payload.keys())
         placeholders = ", ".join(["%s"] * len(new_customer_payload))
         values = list(new_customer_payload.values())
         
@@ -366,18 +329,18 @@ async def _find_or_create_customer(ml_order: dict) -> dict:
         conn.close()
 
 
-async def _transform_ml_order_to_erp_pedido(ml_order: dict, db: Session) -> dict:
+async def _transform_ml_order_to_erp_pedido(ml_order: dict, meli_service: MeliAPIService, db: Session) -> dict:
     config = db.query(MeliConfiguracao).filter(MeliConfiguracao.id == 1).first()
     if not config:
         raise HTTPException(status_code=500, detail="Configurações da integração não encontradas.")
 
-    customer_erp = await _find_or_create_customer(ml_order)
+    customer_erp = await _find_or_create_customer(ml_order['buyer']['id'], meli_service)
 
     lista_itens_erp = []
     for item_ml in ml_order.get('order_items', []):
         sku = item_ml.get('item', {}).get('seller_sku')
         if not sku:
-            raise HTTPException(status_code=400, detail=f"Item '{item_ml.get('item', {}).get('title')}' no pedido do ML está sem SKU.")
+            raise HTTPException(status_code=400, detail=f"Item '{item_ml.get('item', {}).get('title')}' está sem SKU.")
         
         conn = pool.get_connection()
         cursor = conn.cursor(dictionary=True)
@@ -385,21 +348,20 @@ async def _transform_ml_order_to_erp_pedido(ml_order: dict, db: Session) -> dict
             cursor.execute("SELECT id, descricao FROM produtos WHERE sku = %s", (sku,))
             produto_erp = cursor.fetchone()
             if not produto_erp:
-                raise HTTPException(status_code=404, detail=f"Produto com SKU '{sku}' não encontrado no seu ERP.")
+                raise HTTPException(status_code=404, detail=f"Produto com SKU '{sku}' não encontrado no ERP.")
         finally:
             cursor.close()
             conn.close()
-
+        
         lista_itens_erp.append({
             "produto_id": produto_erp['id'],
             "produto": produto_erp['descricao'],
             "quantidade_itens": item_ml['quantity'],
-            "tabela_preco_id": "Mercado Livre",
-            "tabela_preco": "Mercado Livre",
-            "subtotal": item_ml['full_unit_price'] * item_ml['quantity']
+            "tabela_preco_id": "PADRAO", "tabela_preco": "PADRAO",
+            "subtotal": float(item_ml['unit_price']) * item_ml['quantity']
         })
 
-    data_emissao = datetime.fromisoformat(ml_order['date_created'].replace('Z', '+00:00')).strftime('%d/%m/%Y')
+    data_emissao = datetime.fromisoformat(ml_order['date_created'].replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M:%S')
     
     conn = pool.get_connection()
     cursor = conn.cursor(dictionary=True)
@@ -412,28 +374,24 @@ async def _transform_ml_order_to_erp_pedido(ml_order: dict, db: Session) -> dict
         conn.close()
 
     pedido_erp_payload = {
-        "data_emissao": data_emissao,
-        "data_validade": data_emissao,
-        "cliente_id": customer_erp['id'],
-        "cliente_nome": customer_erp['nome_razao'],
-        "vendedor_id": config.vendedor_padrao_id,
-        "vendedor_nome": vendedor_nome_erp,
-        "transportadora_id": "",
+        "data_emissao": data_emissao, "data_validade": data_emissao,
+        "cliente_id": customer_erp['id'], "cliente_nome": customer_erp['nome_razao'],
+        "vendedor_id": config.vendedor_padrao_id, "vendedor_nome": vendedor_nome_erp,
+        "transportadora_id": 1,
         "transportadora_nome": ml_order.get('shipping', {}).get('shipping_option', {}).get('name', 'A definir'),
-        "origem_venda": "Mercado Livre",
-        "lista_itens": lista_itens_erp,
-        "total": ml_order['total_amount'],
-        "desconto_total": ml_order.get('coupon', {}).get('amount', 0),
-        "total_com_desconto": ml_order['total_amount'],
+        "origem_venda": "Mercado Livre", "lista_itens": lista_itens_erp,
+        "total": float(ml_order['total_amount']),
+        "desconto_total": float(ml_order.get('coupon', {}).get('amount', 0)),
+        "total_com_desconto": float(ml_order['total_amount']),
         "tipo_frete": ml_order.get('shipping', {}).get('shipping_mode', 'A definir'),
-        "valor_frete": ml_order.get('shipping', {}).get('cost', 0),
+        "valor_frete": float(ml_order.get('shipping', {}).get('cost', 0)),
         "formas_pagamento": [{
             "tipo": p.get('payment_type', 'Outro').capitalize(),
-            "valor_pix": p['total_paid_amount'] if p.get('payment_type') == 'pix' else 0,
-            "valor_boleto": p['total_paid_amount'] if p.get('payment_type') == 'ticket' else 0,
-            "valor_dinheiro": 0,
+            "valor_pix": float(p['total_paid_amount']) if p.get('payment_type') == 'pix' else 0.0,
+            "valor_boleto": float(p['total_paid_amount']) if p.get('payment_type') == 'ticket' else 0.0,
+            "valor_dinheiro": 0.0,
             "parcelas": p.get('installments'),
-            "valor_parcela": p.get('installment_amount')
+            "valor_parcela": float(p.get('installment_amount', 0))
         } for p in ml_order.get('payments', [])],
         "observacao": f"Pedido importado do Mercado Livre. ID ML: {ml_order['id']}. Comprador: {ml_order['buyer']['nickname']}",
         "situacao_pedido": config.situacao_pedido_inicial
@@ -450,13 +408,15 @@ async def import_meli_order_to_erp(order_id: int, db: Session = Depends(get_db))
     meli_service = MeliAPIService(user_id=credentials.user_id, db=db)
     try:
         ml_order = await meli_service.get_order_details(order_id)
-        erp_pedido_payload = await _transform_ml_order_to_erp_pedido(ml_order, db)  
+        erp_pedido_payload = await _transform_ml_order_to_erp_pedido(ml_order, meli_service, db)
         
         async with httpx.AsyncClient() as client:
             api_host = os.getenv("API_HOST", "http://localhost:8000")
             response = await client.post(f"{api_host}/pedidos", json=erp_pedido_payload)
-            response.raise_for_status()
-        
+            
+            if response.status_code != 201: # Espera um 201 Created
+                 raise HTTPException(status_code=response.status_code, detail=f"Erro ao criar pedido no ERP: {response.text}")
+
         return {"message": "Pedido importado para o ERP com sucesso!", "erp_pedido": response.json()}
     except HTTPException as e:
         raise e

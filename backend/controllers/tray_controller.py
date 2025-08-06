@@ -133,7 +133,6 @@ async def tray_auth_callback(code: str = Query(...), api_address: str = Query(..
     if not config or not config.tray_consumer_key or not config.tray_consumer_secret:
         raise HTTPException(status_code=500, detail="Credenciais da aplicação Tray (Consumer Key/Secret) não configuradas no sistema.")
 
-    token_url = f"{api_address}/auth"
     payload = {
         "consumer_key": config.tray_consumer_key,
         "consumer_secret": config.tray_consumer_secret,
@@ -141,20 +140,19 @@ async def tray_auth_callback(code: str = Query(...), api_address: str = Query(..
     }
     
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(token_url, data=payload)
+        # CORREÇÃO: Define o `api_address` como base_url para o cliente httpx.
+        # Isso garante que a junção de URLs seja feita de forma segura e correta.
+        async with httpx.AsyncClient(base_url=api_address) as client:
+            # A chamada agora é para o caminho relativo "/auth"
+            response = await client.post("/auth", data=payload)
             response.raise_for_status()
             token_data = response.json()
 
             if 'code' in token_data and token_data['code'] not in [200, 201]:
                 raise HTTPException(status_code=400, detail=f"Erro da API Tray ao obter token: {token_data.get('message', 'Resposta inválida')}")
 
-            # CORREÇÃO: Garante que não haja barras duplas na URL
-            # O método .rstrip('/') remove qualquer barra no final de `api_address`
-            # antes de adicionar a barra para o endpoint.
-            info_url = f"{api_address.rstrip('/')}/informations?access_token={token_data['access_token']}"
-            
-            info_response = await client.get(info_url)
+            # A chamada para "/informations" também usará a base_url do cliente
+            info_response = await client.get(f"/informations?access_token={token_data['access_token']}")
             info_response.raise_for_status()
             store_data = info_response.json()
             
