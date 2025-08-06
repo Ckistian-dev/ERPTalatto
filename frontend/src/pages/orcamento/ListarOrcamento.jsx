@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import axios from 'axios'
 import { FiEdit } from 'react-icons/fi'
-import { FaFileCsv, FaFileImport, FaUserPlus, FaTable, FaFilter } from 'react-icons/fa'
+import { FaFileCsv, FaFileImport, FaUserPlus, FaTable, FaFilter, FaEye } from 'react-icons/fa'
 import { Link } from 'react-router-dom'
 import React from 'react'
 import { toast } from 'react-toastify'
@@ -10,6 +10,7 @@ import ModalErro from '@/components/modals/ModalErro'
 import ModalFiltroColunas from '@/components/modals/ModalFiltroColunas'
 import ButtonComPermissao from "@/components/buttons/ButtonComPermissao";
 import ModalEditarTabela from '@/components/modals/ModalEditarTabela'
+import ModalVisualizarPedido from '@/components/modals/ModalVisualizarPedido'
 
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
@@ -54,6 +55,9 @@ export default function Listaorcamentos() {
     const [opcoesDropdown, setOpcoesDropdown] = useState({})
     const [ordenacaoColuna, setOrdenacaoColuna] = useState(null);
     const [ordenacaoAscendente, setOrdenacaoAscendente] = useState(true);
+
+    // Visualizar
+    const [mostrarModalVisualizar, setMostrarModalVisualizar] = useState(false)
 
     // Constante para navegação
     const navigate = useNavigate()
@@ -474,7 +478,17 @@ export default function Listaorcamentos() {
                             Editar Tabela
                         </button>
 
-
+                        {/* Botão Visualizar */}
+                        <button
+                            onClick={() => {
+                                if (!orcamentoSelecionado) return exibirAviso("Você deve selecionar um pedido primeiro!")
+                                setMostrarModalVisualizar(true)
+                            }}
+                            className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded flex items-center gap-2"
+                        >
+                            <FaEye />
+                            Visualizar
+                        </button>
 
 
                         {/* Botão editar */}
@@ -505,8 +519,8 @@ export default function Listaorcamentos() {
                                 <button
                                     onClick={confirmarAcao}
                                     className={`px-5 py-2 rounded-full font-medium shadow text-white ${acaoPendente === 'editar'
-                                            ? 'bg-blue-600 hover:bg-blue-700'
-                                            : 'bg-red-600 hover:bg-red-700'
+                                        ? 'bg-blue-600 hover:bg-blue-700'
+                                        : 'bg-red-600 hover:bg-red-700'
                                         }`}
                                 >
                                     Confirmar
@@ -746,6 +760,13 @@ export default function Listaorcamentos() {
                         }
                         setMostrarEditarTabela(false);
                     }}
+                />
+            )}
+
+            {mostrarModalVisualizar && (
+                <ModalVisualizarPedido
+                    pedido={orcamentoSelecionado}
+                    onClose={() => setMostrarModalVisualizar(false)}
                 />
             )}
         </div>
