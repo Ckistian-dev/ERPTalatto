@@ -140,26 +140,33 @@ async def tray_auth_callback(code: str = Query(...), api_address: str = Query(..
     }
     
     try:
-        # CORREÇÃO: Define o `api_address` como base_url para o cliente httpx.
-        # Isso garante que a junção de URLs seja feita de forma segura e correta.
         async with httpx.AsyncClient(base_url=api_address) as client:
-            # A chamada agora é para o caminho relativo "/auth"
-            response = await client.post("/auth", data=payload)
+            # =========================================================
+            # ALTERAÇÃO PRINCIPAL AQUI
+            # Troque `data=payload` por `json=payload`
+            # Isso envia os dados como JSON, que é o formato
+            # mais comum esperado por APIs REST.
+            # =========================================================
+            response = await client.post("/auth", json=payload) # <- ALTERADO AQUI
+            
             response.raise_for_status()
             token_data = response.json()
 
             if 'code' in token_data and token_data['code'] not in [200, 201]:
                 raise HTTPException(status_code=400, detail=f"Erro da API Tray ao obter token: {token_data.get('message', 'Resposta inválida')}")
 
-            # A chamada para "/informations" também usará a base_url do cliente
+            # O resto da função continua igual...
             params = {"access_token": token_data['access_token']}
             info_response = await client.get("/informations", params=params)
             info_response.raise_for_status()
             store_data = info_response.json()
             
-            store_id = store_data.get("Informations", {}).get("id")
-            if not store_id:
+            store_id_str = store_data.get("Informations", {}).get("id")
+            if not store_id_str:
                 raise HTTPException(status_code=500, detail="Não foi possível obter o ID da loja após a autenticação.")
+            
+            # Convertendo para BigInteger/int
+            store_id = int(store_id_str)
 
             db_credentials = db.query(TrayCredentials).filter(TrayCredentials.store_id == store_id).first()
             
@@ -179,10 +186,12 @@ async def tray_auth_callback(code: str = Query(...), api_address: str = Query(..
                 db.add(new_credentials)
             
             db.commit()
-            # Em um cenário real, você redirecionaria para uma página de sucesso no seu frontend.
             return JSONResponse(content={"message": f"Loja {store_id} conectada com sucesso!"})
 
     except httpx.HTTPStatusError as e:
+        # A resposta de erro da Tray chega aqui, e agora deve ser um erro mais claro ou sucesso.
+        # Adicione um print para facilitar o debug caso o erro persista
+        print("Erro na resposta da Tray:", e.response.text)
         raise HTTPException(status_code=e.response.status_code, detail=f"Erro de comunicação ao obter token da Tray: {e.response.text}")
     except Exception as e:
         db.rollback()
