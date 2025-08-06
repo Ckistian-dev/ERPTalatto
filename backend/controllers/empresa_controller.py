@@ -37,11 +37,6 @@ class InfoEmpresa(Base):
     webmania_access_token = Column(String(255), nullable=True)
     webmania_access_token_secret = Column(String(255), nullable=True)
     
-    # CORREÇÃO: Campos da Tray devem permitir valores nulos (nullable=True)
-    # para que não sejam obrigatórios no banco de dados.
-    tray_consumer_key = Column(String(255), nullable=True)
-    tray_consumer_secret = Column(String(255), nullable=True)
-    
     # Timestamps
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
     created_at = Column(TIMESTAMP, server_default=func.now())
@@ -71,11 +66,6 @@ class InfoEmpresaSchema(BaseModel):
     webmania_consumer_secret: Optional[str] = None
     webmania_access_token: Optional[str] = None
     webmania_access_token_secret: Optional[str] = None
-
-    # CORREÇÃO: Adicionados os campos da Tray ao schema da API
-    # para que possam ser enviados e recebidos.
-    tray_consumer_key: Optional[str] = None
-    tray_consumer_secret: Optional[str] = None
 
     class Config:
         from_attributes = True

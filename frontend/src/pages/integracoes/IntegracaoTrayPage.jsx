@@ -4,9 +4,13 @@ import React, { useState, useEffect } from "react";
 import { toast } from "react-toastify";
 import axios from "axios";
 import { FaPlug, FaUnlink, FaCog, FaBoxOpen, FaShoppingCart, FaExternalLinkAlt, FaFileImport } from 'react-icons/fa';
+import { useAuth } from '@/context/AuthContext';
 
 // Importa o novo modal de configuração de anúncio da Tray
 import ModalConfigAnuncioTray from '@/components/modals/tray/ModalConfigAnuncioTray';
+import CampoTextsimples from '@/components/campos/CampoTextsimples';
+import ButtonComPermissao from "@/components/buttons/ButtonComPermissao";
+import CampoSenha from '@/components/campos/CampoSenha';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -202,6 +206,91 @@ const AbaPedidosTray = () => {
     );
 };
 
+const AbaConfiguracoesTray = () => {
+    const { usuario } = useAuth();
+    const [form, setForm] = useState({
+        // Adiciona os novos campos de credenciais ao estado inicial
+        tray_consumer_key: '',
+        tray_consumer_secret: '',
+        aceite_automatico_pedidos: false,
+        vendedor_padrao_id: '',
+        situacao_pedido_inicial: ''
+    });
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchConfig = async () => {
+            setLoading(true);
+            try {
+                const { data } = await axios.get(`${API_URL}/configuracoes/tray`);
+                setForm(data);
+            } catch (error) {
+                toast.error("Erro ao carregar as configurações da Tray.");
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchConfig();
+    }, []);
+
+    const handleChange = (e) => {
+        const { name, value, type, checked } = e.target;
+        const finalValue = type === 'checkbox' ? checked : value;
+        setForm(prev => ({ ...prev, [name]: finalValue }));
+    };
+
+    const handleSave = async (e) => {
+        e.preventDefault();
+        try {
+            await axios.put(`${API_URL}/configuracoes/tray`, form);
+            toast.success("Configurações salvas com sucesso!");
+        } catch (error) {
+            toast.error(error.response?.data?.detail || "Falha ao salvar as configurações.");
+        }
+    };
+
+    if (loading) {
+        return <p className="text-center py-10">Carregando configurações...</p>;
+    }
+
+    return (
+        <div>
+            <form id="form-config-tray" onSubmit={handleSave} className="space-y-8">
+                {/* NOVA SEÇÃO PARA CREDENCIAIS */}
+                <div className="p-6 bg-white border rounded-lg shadow-sm">
+                    <h3 className="text-lg font-semibold mb-4 text-gray-800">Credenciais da Aplicação</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <CampoSenha 
+                            label="Tray Consumer Key" 
+                            name="tray_consumer_key" 
+                            value={form.tray_consumer_key || ''} 
+                            onChange={handleChange} 
+                            obrigatorio 
+                        />
+                        <CampoSenha 
+                            label="Tray Consumer Secret" 
+                            name="tray_consumer_secret" 
+                            value={form.tray_consumer_secret || ''} 
+                            onChange={handleChange} 
+                            obrigatorio 
+                        />
+                    </div>
+                </div>
+                <div className="flex justify-end gap-4 mt-6">
+                    <ButtonComPermissao
+                        permissoes={["admin"]}
+                        type="submit"
+                        form="form-config-tray"
+                        className="px-6 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded font-semibold"
+                    >
+                        Salvar Alterações
+                    </ButtonComPermissao>
+                </div>
+            </form>
+        </div>
+    );
+};
+
 
 // --- Componente Principal da Página (Adaptado para Tray) ---
 export default function IntegracaoTrayPage() {
@@ -275,16 +364,17 @@ export default function IntegracaoTrayPage() {
     };
 
     const renderAbaAtual = () => {
-        if (statusInfo.status !== 'conectado' && abaAtual !== 'visao_geral') {
+        if (statusInfo.status !== 'conectado' && abaAtual === 'anuncios' && abaAtual === 'pedidos') {
             return <div className="text-center p-8 text-gray-600">Conecte uma loja na aba "Visão Geral" para acessar esta funcionalidade.</div>;
         }
         switch (abaAtual) {
             case "visao_geral": return renderAbaVisaoGeral();
             case "anuncios": return <AbaAnunciosTray />;
             case "pedidos": return <AbaPedidosTray />;
-            // case "configuracoes": return <AbaConfiguracoesTray />;
+            case "configuracoes": return <AbaConfiguracoesTray />;
             default: return null;
         }
+    
     };
 
     return (

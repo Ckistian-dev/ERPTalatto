@@ -7,20 +7,7 @@ from typing import Optional
 
 # Importa a Base (para o modelo) e o get_db (para os endpoints)
 from config.database import Base, get_db
-
-# ==================================
-#              MODEL
-# ==================================
-# O modelo SQLAlchemy que antes estava em um arquivo separado, agora está aqui.
-class MeliConfiguracao(Base):
-    __tablename__ = "meli_configuracoes"
-
-    id = Column(Integer, primary_key=True, default=1)
-    aceite_automatico_pedidos = Column(Boolean, default=False)
-    cliente_padrao_id = Column(Integer)
-    vendedor_padrao_id = Column(Integer)
-    situacao_pedido_inicial = Column(String(100), default='Aguardando Faturamento')
-    atualizado_em = Column(DateTime, default=func.now(), onupdate=func.now())
+from models.configuracao_meli_model import MeliConfiguracao
 
 # ==================================
 #              SCHEMA

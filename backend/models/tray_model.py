@@ -39,44 +39,41 @@ class TrayCredentials(Base):
     last_updated = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 # ==================================
-#         MODELO DE CONFIGURAÇÕES
+#         MODELO DE CONFIGURAÇÕES (ATUALIZADO)
 # ==================================
-# Este modelo armazena as configurações gerais da integração com a Tray,
-# de forma similar ao 'MeliConfiguracao'.
 class TrayConfiguracao(Base):
-    """
-    Modelo SQLAlchemy para as configurações globais da integração Tray.
-    """
     __tablename__ = "tray_configuracoes"
-
-    # Usamos um ID fixo para garantir que haja apenas uma linha de configuração.
     id = Column(Integer, primary_key=True, default=1)
     
-    aceite_automatico_pedidos = Column(Boolean, default=False)
-    cliente_padrao_id = Column(Integer)
-    vendedor_padrao_id = Column(Integer)
-    situacao_pedido_inicial = Column(String(100), default='A ENVIAR')
+    # Credenciais da Aplicação (Movidas para cá)
+    tray_consumer_key = Column(String(255), nullable=True)
+    tray_consumer_secret = Column(String(255), nullable=True)
     
-    # Campo para armazenar o ID da categoria padrão na Tray, se necessário.
-    categoria_padrao_tray_id = Column(BigInteger)
+    # Configurações de Pedidos
+    aceite_automatico_pedidos = Column(Boolean, default=False)
+    cliente_padrao_id = Column(Integer, nullable=True)
+    vendedor_padrao_id = Column(Integer, nullable=True)
+    situacao_pedido_inicial = Column(String(100), default='A ENVIAR')
     
     atualizado_em = Column(DateTime, default=func.now(), onupdate=func.now())
 
-
 # ==================================
-#         SCHEMAS (PYDANTIC)
+#         SCHEMA (ATUALIZADO)
 # ==================================
-# Schemas para validação de dados nas rotas da API.
-
 class TrayConfiguracaoSchema(BaseModel):
+    # Credenciais da Aplicação
+    tray_consumer_key: Optional[str] = None
+    tray_consumer_secret: Optional[str] = None
+    
+    # Configurações de Pedidos
     aceite_automatico_pedidos: bool
     cliente_padrao_id: Optional[int] = None
     vendedor_padrao_id: Optional[int] = None
     situacao_pedido_inicial: Optional[str] = Field(None, max_length=100)
-    categoria_padrao_tray_id: Optional[int] = None
 
     class Config:
         from_attributes = True
+
 
 class TrayAuthSuccessResponse(BaseModel):
     message: str = "Autenticação com a Tray Commerce realizada com sucesso!"

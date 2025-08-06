@@ -3,7 +3,7 @@
 import os
 import httpx
 import traceback
-import mysql.connector.pooling # Reutilizando o pool de conexão do seu projeto
+import mysql.connector.pooling
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -21,9 +21,9 @@ from services.tray_service import TrayAPIService
 #         CONFIGURAÇÃO
 # ==================================
 load_dotenv()
-router = APIRouter(prefix="/tray", tags=["Tray E-commerce"])
 
-# Reutilizando o pool de conexão que você já configurou para o ERP
+router = APIRouter(tags=["Tray E-commerce"])
+
 pool = mysql.connector.pooling.MySQLConnectionPool(
     pool_name="tray_gerenciador_pool",
     pool_size=5,
@@ -41,37 +41,100 @@ class AnuncioTrayPayload(BaseModel):
     erp_product_id: int
     tray_listing_id: Optional[int] = None
     form_data: Dict[str, Any]
-    
+
 class EnvioPedidoPayload(BaseModel):
     codigo_rastreio: str
     transportadora: str
     url_rastreio: Optional[str] = None
-
+    
 # ==================================
 #     ENDPOINTS DE AUTENTICAÇÃO E STATUS
 # ==================================
-# ... (código dos endpoints /status, /callback, /credentials do passo anterior, sem alterações)
-@router.get("/status", summary="Verifica o status da conexão com a Tray")
+
+@router.get("/tray/status", summary="Verifica o status da conexão com a Tray")
 async def get_integration_status(db: Session = Depends(get_db)):
     try:
         credentials = db.query(TrayCredentials).first()
-        if not credentials: return {"status": "desconectado"}
+        if not credentials:
+            return {"status": "desconectado"}
         try:
             tray_service = TrayAPIService(store_id=credentials.store_id, db=db)
             store_info = await tray_service.get_store_info()
-            return {"status": "conectado", "store_id": store_info.get("id"), "store_name": store_info.get("name"), "store_email": store_info.get("email"), "store_url": store_info.get("url")}
+            return {
+                "status": "conectado",
+                "store_id": store_info.get("id"),
+                "store_name": store_info.get("name"),
+                "store_email": store_info.get("email"),
+                "store_url": store_info.get("url")
+            }
         except HTTPException as e:
             return {"status": "erro_conexao", "detail": e.detail}
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro interno: {e}")
 
-# ... (outros endpoints de autenticação aqui)
+@router.get("/tray", summary="Callback de Autenticação da Tray")
+async def tray_auth_callback(code: str = Query(...), api_address: str = Query(...), db: Session = Depends(get_db)):
+    config = db.query(TrayConfiguracao).filter(TrayConfiguracao.id == 1).first()
+    if not config or not config.tray_consumer_key or not config.tray_consumer_secret:
+        raise HTTPException(status_code=500, detail="Credenciais da aplicação Tray (Consumer Key/Secret) não configuradas no sistema.")
+
+    token_url = f"{api_address}/auth"
+    payload = {
+        "consumer_key": config.tray_consumer_key,
+        "consumer_secret": config.tray_consumer_secret,
+        "code": code,
+    }
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(token_url, data=payload)
+            response.raise_for_status()
+            token_data = response.json()
+
+            if 'code' in token_data and token_data['code'] not in [200, 201]:
+                raise HTTPException(status_code=400, detail=f"Erro da API Tray ao obter token: {token_data.get('message', 'Resposta inválida')}")
+
+            info_url = f"{api_address}/informations?access_token={token_data['access_token']}"
+            info_response = await client.get(info_url)
+            info_response.raise_for_status()
+            store_data = info_response.json()
+            
+            store_id = store_data.get("Informations", {}).get("id")
+            if not store_id:
+                raise HTTPException(status_code=500, detail="Não foi possível obter o ID da loja após a autenticação.")
+
+            db_credentials = db.query(TrayCredentials).filter(TrayCredentials.store_id == store_id).first()
+            
+            if db_credentials:
+                db_credentials.access_token = token_data['access_token']
+                db_credentials.refresh_token = token_data['refresh_token']
+                db_credentials.date_expires = token_data['date_expires']
+                db_credentials.api_address = api_address
+            else:
+                new_credentials = TrayCredentials(
+                    store_id=store_id,
+                    api_address=api_address,
+                    access_token=token_data['access_token'],
+                    refresh_token=token_data['refresh_token'],
+                    date_expires=token_data['date_expires']
+                )
+                db.add(new_credentials)
+            
+            db.commit()
+            return TrayAuthSuccessResponse(store_id=store_id)
+
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=f"Erro de comunicação ao obter token da Tray: {e.response.text}")
+    except Exception as e:
+        db.rollback()
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Ocorreu um erro interno no servidor: {str(e)}")
 
 # ==================================
-#     NOVOS ENDPOINTS DE PRODUTOS/ANÚNCIOS
+#     ENDPOINTS DE PRODUTOS/ANÚNCIOS
 # ==================================
-@router.get("/anuncios", summary="Lista produtos do ERP e seu status na Tray")
+@router.get("/tray/anuncios", summary="Lista produtos do ERP e seu status na Tray")
 async def get_combined_listings(
     page: int = 1,
     limit: int = 15,
@@ -85,13 +148,11 @@ async def get_combined_listings(
     tray_service = TrayAPIService(store_id=credentials.store_id, db=db)
 
     try:
-        # Busca todos os produtos da Tray de uma vez e mapeia por SKU
         tray_items_by_sku = await tray_service.get_products_by_sku()
     except HTTPException as e:
         print(f"Aviso: Falha ao buscar produtos da Tray. Exibindo apenas dados do ERP. Erro: {e.detail}")
         tray_items_by_sku = {}
 
-    # Lógica para buscar produtos do ERP (reaproveitada da sua integração ML)
     conn = pool.get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -112,7 +173,6 @@ async def get_combined_listings(
         cursor.close()
         conn.close()
 
-    # Combina os resultados
     resultados_combinados = []
     for erp_product in erp_products:
         sku = erp_product.get("sku")
@@ -124,16 +184,16 @@ async def get_combined_listings(
 
     return {"total": total_erp, "resultados": resultados_combinados}
 
-@router.get("/categorias/buscar", summary="Busca categorias da Tray por termo")
+@router.get("/tray/categorias/buscar", summary="Busca categorias da Tray por termo")
 async def search_categories_by_term(q: str, db: Session = Depends(get_db)):
     credentials = db.query(TrayCredentials).first()
     if not credentials:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integração Tray não está ativa.")
-    tray_service = TrayAPIService(user_id=credentials.store_id, db=db)
+    tray_service = TrayAPIService(store_id=credentials.store_id, db=db)
     categories = await tray_service.search_categories(name=q, limit=10)
     return categories
 
-@router.post("/anuncios", summary="Publica ou atualiza um anúncio na Tray")
+@router.post("/tray/anuncios", summary="Publica ou atualiza um anúncio na Tray")
 async def publish_listing(payload: AnuncioTrayPayload, db: Session = Depends(get_db)):
     credentials = db.query(TrayCredentials).first()
     if not credentials:
@@ -142,7 +202,6 @@ async def publish_listing(payload: AnuncioTrayPayload, db: Session = Depends(get
     tray_service = TrayAPIService(store_id=credentials.store_id, db=db)
     
     try:
-        # O SKU (reference) é obrigatório para a Tray
         conn = pool.get_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute("SELECT sku FROM produtos WHERE id = %s", (payload.erp_product_id,))
@@ -152,7 +211,6 @@ async def publish_listing(payload: AnuncioTrayPayload, db: Session = Depends(get
         if not erp_product or not erp_product.get('sku'):
             raise HTTPException(status_code=404, detail="Produto ou SKU do ERP não encontrado.")
         
-        # Adiciona/sobrescreve o SKU no payload a ser enviado
         payload.form_data['reference'] = erp_product['sku']
 
         result = await tray_service.publish_or_update_product(
@@ -167,9 +225,9 @@ async def publish_listing(payload: AnuncioTrayPayload, db: Session = Depends(get
         raise HTTPException(status_code=500, detail=f"Erro inesperado ao salvar anúncio: {e}")
 
 # ==================================
-#     NOVOS ENDPOINTS DE PEDIDOS
+#     ENDPOINTS DE PEDIDOS
 # ==================================
-@router.get("/pedidos", summary="Lista os pedidos recentes da Tray")
+@router.get("/tray/pedidos", summary="Lista os pedidos recentes da Tray")
 async def get_tray_orders(page: int = 1, limit: int = 15, db: Session = Depends(get_db)):
     credentials = db.query(TrayCredentials).first()
     if not credentials:
@@ -188,26 +246,19 @@ async def get_tray_orders(page: int = 1, limit: int = 15, db: Session = Depends(
     except HTTPException as e:
         raise e
 
-# Função auxiliar para "traduzir" o pedido da Tray para o formato do ERP
-# Esta função precisará ser ajustada para corresponder EXATAMENTE aos campos do seu ERP
 async def _transform_tray_order_to_erp_pedido(tray_order: dict, db: Session) -> dict:
-    
-    # Lógica para encontrar o cliente (pode ser por CPF, e-mail, etc.)
-    # Por enquanto, usaremos um cliente padrão.
     cliente_id_erp = 1 
     cliente_nome_erp = tray_order['Customer']['name']
-
-    # Lógica para encontrar o vendedor
     vendedor_id_erp = 1 
     vendedor_nome_erp = "Vendedor Padrão"
+    transportadora_id_erp = 1
+    transportadora_nome_erp = tray_order.get('shipment', 'A definir')
 
-    # Converte os itens do pedido
     lista_itens_erp = []
-    for item_tray in tray_order.get('ProductsSold', []):
-        item = item_tray.get("ProductsSold")
+    for item_tray_wrapper in tray_order.get('ProductsSold', []):
+        item = item_tray_wrapper.get("ProductsSold")
         if not item: continue
 
-        # Busca o produto no ERP pelo SKU ('reference' na Tray)
         conn = pool.get_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute("SELECT id FROM produtos WHERE sku = %s", (item['reference'],))
@@ -217,17 +268,40 @@ async def _transform_tray_order_to_erp_pedido(tray_order: dict, db: Session) -> 
         conn.close()
 
         if not produto_id_erp:
-            print(f"AVISO: Produto com SKU {item['reference']} não encontrado no ERP.")
+            print(f"AVISO: Produto com SKU {item['reference']} não encontrado no ERP. Item não será adicionado ao pedido.")
             continue
 
         lista_itens_erp.append({
             "produto_id": produto_id_erp,
             "produto": item['name'],
             "quantidade_itens": int(float(item['quantity'])),
-            "subtotal": float(item['price']) * int(float(item['quantity']))
-            # Adicione outros campos necessários para o item no seu ERP
+            "subtotal": float(item['price']) * int(float(item['quantity'])),
+            "tabela_preco_id": "PADRAO",
+            "tabela_preco": "PADRAO"
         })
     
+    formas_pagamento_erp = []
+    for pagamento_tray_wrapper in tray_order.get('Payment', []):
+        pagamento = pagamento_tray_wrapper.get("Payment")
+        if not pagamento: continue
+        
+        tipo_pagamento = "Outros"
+        if "Cartão" in pagamento.get("payment_method", ""):
+            tipo_pagamento = "Cartão de Crédito"
+        elif "Boleto" in pagamento.get("payment_method", ""):
+            tipo_pagamento = "Boleto"
+        elif "Pix" in pagamento.get("payment_method", ""):
+            tipo_pagamento = "Pix"
+
+        formas_pagamento_erp.append({
+            "tipo": tipo_pagamento,
+            "valor_pix": float(pagamento['value']) if tipo_pagamento == "Pix" else 0,
+            "valor_boleto": float(pagamento['value']) if tipo_pagamento == "Boleto" else 0,
+            "valor_dinheiro": 0,
+            "parcelas": int(pagamento.get("installments", 1)),
+            "valor_parcela": float(pagamento.get("installment_value", pagamento['value']))
+        })
+
     data_emissao = datetime.strptime(tray_order['date'], '%Y-%m-%d %H:%M:%S').strftime('%Y-%m-%d %H:%M:%S')
 
     pedido_erp_payload = {
@@ -237,33 +311,51 @@ async def _transform_tray_order_to_erp_pedido(tray_order: dict, db: Session) -> 
         "cliente_nome": cliente_nome_erp,
         "vendedor_id": vendedor_id_erp,
         "vendedor_nome": vendedor_nome_erp,
+        "transportadora_id": transportadora_id_erp,
+        "transportadora_nome": transportadora_nome_erp,
         "origem_venda": "Tray E-commerce",
         "lista_itens": lista_itens_erp,
         "total": float(tray_order['total']),
         "desconto_total": float(tray_order.get('discount', 0)),
         "total_com_desconto": float(tray_order['total']) - float(tray_order.get('discount', 0)),
+        "tipo_frete": tray_order.get('shipment_type', 'A definir'),
         "valor_frete": float(tray_order.get('shipment_value', 0)),
+        "formas_pagamento": formas_pagamento_erp,
         "observacao": f"Pedido importado da Tray. ID Tray: {tray_order['id']}. Comprador: {cliente_nome_erp}",
-        "situacao_pedido": "A ENVIAR" # Situação inicial no ERP
-        # Adicione outros campos necessários para o pedido no seu ERP
+        "situacao_pedido": "A ENVIAR"
     }
-
     return pedido_erp_payload
 
+@router.post("/tray/pedidos/{order_id}/importar", summary="Importa um pedido da Tray para o ERP")
+async def import_tray_order_to_erp(order_id: int, db: Session = Depends(get_db)):
+    credentials = db.query(TrayCredentials).first()
+    if not credentials:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integração Tray não está ativa.")
 
-# ===================================================================
-# NOVO ENDPOINT PARA ATUALIZAR STATUS DO PEDIDO (ERP -> TRAY)
-# ===================================================================
-@router.put("/pedidos/{order_id_tray}/enviar", summary="Envia dados de rastreio do ERP para a Tray")
+    tray_service = TrayAPIService(store_id=credentials.store_id, db=db)
+    
+    try:
+        tray_order = await tray_service.get_order_details(order_id)
+        erp_pedido_payload = await _transform_tray_order_to_erp_pedido(tray_order, db)
+
+        async with httpx.AsyncClient() as client:
+            api_host = os.getenv("API_HOST", "http://localhost:8000")
+            response = await client.post(f"{api_host}/pedidos", json=erp_pedido_payload)
+            response.raise_for_status()
+
+        return {"message": "Pedido importado para o ERP com sucesso!", "erp_pedido": response.json()}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro inesperado ao importar pedido: {e}")
+
+@router.put("/tray/pedidos/{order_id_tray}/enviar", summary="Envia dados de rastreio do ERP para a Tray")
 async def enviar_pedido_para_tray(
     order_id_tray: int, 
     payload: EnvioPedidoPayload, 
     db: Session = Depends(get_db)
 ):
-    """
-    Este endpoint deve ser chamado pelo seu ERP após o faturamento de um pedido
-    e a geração do código de rastreio. Ele atualiza o status na Tray.
-    """
     credentials = db.query(TrayCredentials).first()
     if not credentials:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integração Tray não está ativa.")
@@ -271,11 +363,7 @@ async def enviar_pedido_para_tray(
     tray_service = TrayAPIService(store_id=credentials.store_id, db=db)
     
     try:
-        # IMPORTANTE: O nome do status "Enviado" pode variar na sua loja Tray.
-        # Verifique no painel da Tray em Vendas -> Status dos Pedidos qual é o nome
-        # do status que você usa para pedidos despachados e ajuste aqui se necessário.
         STATUS_PEDIDO_ENVIADO = "Enviado"
-
         result = await tray_service.update_order_status_and_tracking(
             order_id=order_id_tray,
             status_name=STATUS_PEDIDO_ENVIADO,
@@ -290,72 +378,67 @@ async def enviar_pedido_para_tray(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erro inesperado ao enviar dados do pedido: {e}")
 
-@router.post("/pedidos/{order_id}/importar", summary="Importa um pedido da Tray para o ERP")
-async def import_tray_order_to_erp(order_id: int, db: Session = Depends(get_db)):
-    credentials = db.query(TrayCredentials).first()
-    if not credentials:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integração Tray não está ativa.")
+# ==================================
+#     ENDPOINT DE CONFIGURAÇÕES
+# ==================================
+@router.get("/configuracoes/tray", response_model=TrayConfiguracaoSchema, summary="Busca as configurações da integração Tray")
+def get_tray_configuracoes(db: Session = Depends(get_db)):
+    config = db.query(TrayConfiguracao).filter(TrayConfiguracao.id == 1).first()
+    if not config:
+        config = TrayConfiguracao(id=1)
+        db.add(config)
+        db.commit()
+        db.refresh(config)
+    return config
 
-    tray_service = TrayAPIService(store_id=credentials.store_id, db=db)
-    
-    try:
-        # 1. Busca os detalhes do pedido na Tray
-        tray_order = await tray_service.get_order_details(order_id)
-        
-        # 2. "Traduz" para o formato do ERP
-        erp_pedido_payload = await _transform_tray_order_to_erp_pedido(tray_order, db)
-
-        # 3. Faz uma chamada interna para a sua própria API para criar o pedido
-        async with httpx.AsyncClient() as client:
-            api_host = os.getenv("API_HOST", "http://localhost:8000")
-            response = await client.post(f"{api_host}/pedidos", json=erp_pedido_payload)
-            response.raise_for_status()
-
-        return {"message": "Pedido importado para o ERP com sucesso!", "erp_pedido": response.json()}
-
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Erro inesperado ao importar pedido: {e}")
-
+@router.put("/configuracoes/tray", response_model=TrayConfiguracaoSchema, summary="Atualiza as configurações da integração Tray")
+def update_tray_configuracoes(config_update: TrayConfiguracaoSchema, db: Session = Depends(get_db)):
+    config = db.query(TrayConfiguracao).filter(TrayConfiguracao.id == 1).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="Configuração não encontrada.")
+    update_data = config_update.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(config, key, value)
+    db.commit()
+    db.refresh(config)
+    return config
 
 # ===================================================================
-# LÓGICA DE WEBHOOKS ATUALIZADA
+# LÓGICA DE WEBHOOKS
 # ===================================================================
-
 async def process_order_notification(store_id: int, order_id: int, db: Session):
-    """
-    Função em segundo plano para processar notificações de pedidos.
-    AGORA INCLUI VERIFICAÇÃO PARA EVITAR DUPLICATAS.
-    """
     print(f"Processando notificação de pedido da Tray: Loja={store_id}, Pedido={order_id}")
     try:
-        # ATUALIZAÇÃO: Verifica se o pedido já foi importado para o ERP
         conn = pool.get_connection()
         cursor = conn.cursor(dictionary=True)
-        # Procuramos pela observação que contém o ID da Tray
         cursor.execute("SELECT id FROM pedidos WHERE origem_venda = 'Tray E-commerce' AND observacao LIKE %s", (f"%ID Tray: {order_id}%",))
         pedido_existente = cursor.fetchone()
         cursor.close()
         conn.close()
 
         if pedido_existente:
-            print(f"Pedido {order_id} já existe no ERP com o ID {pedido_existente['id']}. Ignorando notificação.")
-            # TODO: No futuro, você pode adicionar uma lógica aqui para ATUALIZAR o status do pedido existente.
+            print(f"Pedido {order_id} já existe no ERP. Ignorando notificação.")
             return
 
-        # 1. Busca as configurações para saber se a importação deve ser automática
         config = db.query(TrayConfiguracao).filter(TrayConfiguracao.id == 1).first()
         if not config or not config.aceite_automatico_pedidos:
-            print(f"Importação automática de pedidos desativada. Ignorando notificação para o pedido {order_id}.")
+            print(f"Importação automática desativada. Ignorando pedido {order_id}.")
             return
 
-        # 2. Usa o TrayAPIService para buscar os detalhes completos do pedido
         tray_service = TrayAPIService(store_id=store_id, db=db)
         order_details = await tray_service.get_order_details(order_id)
         
-        # ... (Restante da lógica de verificação de status e importação permanece a mesma)
+        # O status "Pagamento aprovado" na Tray geralmente tem o ID '5'
+        if order_details.get('status_id') != '5': 
+            print(f"Pedido {order_id} não está com status 'Pagamento aprovado'. Importação ignorada.")
+            return
+
+        erp_pedido_payload = await _transform_tray_order_to_erp_pedido(order_details, db)
+
+        async with httpx.AsyncClient() as client:
+            api_host = os.getenv("API_HOST", "http://localhost:8000")
+            response = await client.post(f"{api_host}/pedidos", json=erp_pedido_payload)
+            response.raise_for_status()
         
         print(f"SUCESSO: Pedido {order_id} da loja {store_id} importado automaticamente para o ERP.")
 
@@ -363,14 +446,9 @@ async def process_order_notification(store_id: int, order_id: int, db: Session):
         print(f"ERRO ao processar notificação do pedido {order_id} da loja {store_id}: {e}")
         traceback.print_exc()
 
-
 async def process_product_notification(store_id: int, product_id: int, db: Session):
-    """
-    NOVA FUNÇÃO: Executada em segundo plano para processar atualizações de produtos (estoque).
-    """
     print(f"Processando notificação de produto da Tray: Loja={store_id}, Produto={product_id}")
     try:
-        # 1. Busca os detalhes completos do produto na Tray para obter o SKU e o estoque atual
         tray_service = TrayAPIService(store_id=store_id, db=db)
         product_details = await tray_service.get_product_details(product_id)
 
@@ -378,24 +456,19 @@ async def process_product_notification(store_id: int, product_id: int, db: Sessi
         novo_estoque = product_details.get("stock")
 
         if not sku:
-            print(f"Produto {product_id} da Tray não possui SKU (reference). Sincronização de estoque ignorada.")
+            print(f"Produto {product_id} da Tray não possui SKU. Sincronização ignorada.")
             return
 
-        # 2. Atualiza o estoque no banco de dados do ERP
-        print(f"Atualizando estoque no ERP para o SKU '{sku}': novo estoque = {novo_estoque}")
         conn = pool.get_connection()
         cursor = conn.cursor()
-        # ATENÇÃO: O nome da sua tabela de produtos e da coluna de estoque pode ser diferente.
-        # Ajuste a query abaixo para corresponder à sua estrutura.
         query = "UPDATE produtos SET estoque_atual = %s WHERE sku = %s"
         cursor.execute(query, (int(novo_estoque), sku))
         conn.commit()
         
-        # Verifica se alguma linha foi de fato atualizada
         if cursor.rowcount > 0:
             print(f"SUCESSO: Estoque do SKU '{sku}' atualizado para {novo_estoque} no ERP.")
         else:
-            print(f"AVISO: Nenhum produto encontrado no ERP com o SKU '{sku}'. O estoque não foi atualizado.")
+            print(f"AVISO: SKU '{sku}' não encontrado no ERP. Estoque não atualizado.")
             
         cursor.close()
         conn.close()
@@ -404,17 +477,12 @@ async def process_product_notification(store_id: int, product_id: int, db: Sessi
         print(f"ERRO ao processar notificação do produto {product_id} da loja {store_id}: {e}")
         traceback.print_exc()
 
-
-@router.post("/webhooks", status_code=status.HTTP_200_OK)
+@router.post("/tray/webhooks", status_code=status.HTTP_200_OK)
 async def handle_tray_webhook(
     request: Request,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
-    """
-    Endpoint que recebe todas as notificações da Tray.
-    AGORA ROTEIA NOTIFICAÇÕES DE PRODUTOS E PEDIDOS.
-    """
     form_data = await request.form()
     scope_name = form_data.get("scope_name")
     scope_id = form_data.get("scope_id")
@@ -426,7 +494,6 @@ async def handle_tray_webhook(
 
     print(f"Webhook da Tray recebido: Loja={store_id}, Recurso='{scope_name}', ID='{scope_id}', Ação='{act}'")
 
-    # Roteamento das tarefas em segundo plano
     if scope_name == "order" and act in ["insert", "update"]:
         background_tasks.add_task(
             process_order_notification,
@@ -434,7 +501,6 @@ async def handle_tray_webhook(
             int(scope_id),
             db
         )
-    # ATUALIZAÇÃO: Adiciona o roteamento para o webhook de produtos
     elif scope_name == "product" and act == "update":
         background_tasks.add_task(
             process_product_notification,

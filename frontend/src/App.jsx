@@ -29,7 +29,6 @@ import ConsultaNFE from "./pages/ConsultaNFE";
 import ConsultaEstoque from "./pages/estoque/ConsultaEstoque";
 import CadastroPosicaoEstoque from "./pages/estoque/CadastroPosicaoEstoque";
 import SaidaEstoque from "./pages/estoque/SaidaEstoque";
-import InfoEmpresaPage from "./pages/InfoEmpresaPage";
 import RegrasEmbalagem from "./pages/embalagem/RegrasEmbalagem";
 import ListaLogicasEmbalagem from "./pages/embalagem/ListaLogicasEmbalagem";
 import CadastroUsuario from "./pages/usuario/CadastroUsuario";
@@ -37,6 +36,7 @@ import ListaUsuarios from "./pages/usuario/ListaUsuarios";
 import IntegracaoMercadoLivrePage from './pages/integracoes/IntegracaoMercadoLivrePage';
 import IntegracaoTrayPage from './pages/integracoes/IntegracaoTrayPage';
 import IntegracaoIntelipostPage from './pages/integracoes/IntegracaoIntelipostPage';
+import IntegracaoWebmaniaPage from "./pages/integracoes/IntegracaoWebmaniaPage";
 
 function App() {
   return (
@@ -79,13 +79,13 @@ function App() {
             <Route path="/estoque/entrada" element={<CadastroPosicaoEstoque />} />
             <Route path="/estoque/editar" element={<CadastroPosicaoEstoque modo="editar" />} />
             <Route path="/estoque/saida" element={<SaidaEstoque />} />
-            <Route path="/empresa/dados" element={<InfoEmpresaPage />} />
             <Route path="/embalagem/novo" element={<RegrasEmbalagem />} />
             <Route path="/embalagem/editar" element={<RegrasEmbalagem modo="editar" />} />
             <Route path="/embalagem" element={<ListaLogicasEmbalagem />} />
             <Route path="/usuario/novo" element={<CadastroUsuario />} />
             <Route path="/usuario/editar" element={<CadastroUsuario modo="editar" />} />
             <Route path="/usuario" element={<ListaUsuarios />} />
+            <Route path="/integracoes/webmania" element={<IntegracaoWebmaniaPage />} />
             <Route path="/integracoes/mercadolivre" element={<IntegracaoMercadoLivrePage />} />
             <Route path="/integracoes/tray" element={<IntegracaoTrayPage />} />
             <Route path="/integracoes/intelipost" element={<IntegracaoIntelipostPage />} />

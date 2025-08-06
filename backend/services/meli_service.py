@@ -249,6 +249,21 @@ class MeliAPIService:
             error_body = e.response.json()
             raise HTTPException(status_code=e.response.status_code, detail=f"Erro da API do Mercado Livre: {error_body.get('message', 'Erro desconhecido.')} Causa: {error_body.get('cause', [])}")
 
+    async def get_order_details(self, order_id: int) -> dict:
+        """
+        Busca os detalhes completos de um pedido específico.
+        """
+        auth_header = await self._get_auth_header()
+        url = f"{self.base_url}/orders/{order_id}"
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers=auth_header)
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=f"Erro na API do ML ao buscar pedido {order_id}: {e.response.json()}")
+
 
     async def get_recent_orders(self, limit: int = 50, offset: int = 0) -> dict:
         """
