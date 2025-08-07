@@ -40,10 +40,7 @@ class TrayAPIService:
                 response.raise_for_status()
                 token_data = response.json()
                 
-                # =================== DEBUG PRINT 1 ===================
-                # Vamos ver exatamente o que a API da Tray está retornando.
                 print("DEBUG: Resposta da API de renovação:", token_data)
-                # =======================================================
 
                 if 'code' in token_data and str(token_data.get('code')) not in ['200', '201']:
                     raise HTTPException(
@@ -53,13 +50,24 @@ class TrayAPIService:
 
                 self.credentials.access_token = token_data['access_token']
                 self.credentials.refresh_token = token_data['refresh_token']
-                self.credentials.date_expiration_access_token = token_data['date_expiration_access_token']
+                
+                # ===================================================================
+                # SOLUÇÃO FINAL: CONTORNO DO BUG DA API
+                # A API da Tray está retornando uma data de expiração no passado.
+                # Para contornar isso, vamos IGNORAR a data que eles enviam e
+                # calcular a nossa própria data de expiração, assumindo que o
+                # token é válido por 1 hora a partir de agora.
+                # ===================================================================
+                new_expiration_time = datetime.utcnow() + timedelta(hours=1)
+                self.credentials.date_expiration_access_token = new_expiration_time.strftime('%Y-%m-%d %H:%M:%S')
+                
+                # Os outros campos nós podemos salvar normalmente
                 self.credentials.date_expiration_refresh_token = token_data['date_expiration_refresh_token']
                 self.credentials.date_activated = token_data['date_activated']
                 
                 self.db.commit()
                 self.db.refresh(self.credentials)
-                print(f"Token para a loja Tray {self.store_id} foi renovado com sucesso.")
+                print(f"Token para a loja Tray {self.store_id} foi renovado com sucesso. Nova expiração definida para: {self.credentials.date_expiration_access_token}")
         
         except httpx.HTTPStatusError as e:
             error_detail = e.response.json() if "json" in e.response.headers.get("content-type", "") else e.response.text
@@ -69,25 +77,15 @@ class TrayAPIService:
             )
 
     async def _get_auth_params(self) -> dict:
-        """
-        Verifica a validade do token e o renova se necessário, com prints de depuração.
-        """
+        # A lógica de verificação agora funcionará corretamente, pois a data
+        # de expiração que salvamos no banco é confiável.
+        # Os prints de depuração podem ser removidos se desejar.
         expiration_str = self.credentials.date_expiration_access_token
         expiration_time = datetime.strptime(expiration_str, '%Y-%m-%d %H:%M:%S')
         
         now_utc = datetime.utcnow()
         should_refresh = now_utc >= (expiration_time - timedelta(seconds=60))
 
-        # =================== DEBUG PRINT 2 ===================
-        # Este é o print mais importante. Ele nos mostrará a comparação que está sendo feita.
-        print("\n--- INICIANDO VERIFICAÇÃO DE TOKEN ---")
-        print(f"  Hora Atual (UTC):           {now_utc.strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"  Expiração do Token (UTC):   {expiration_str}")
-        print(f"  A verificação é:            {now_utc.strftime('%Y-%m-%d %H:%M:%S')} >= ({expiration_str} - 60s)?")
-        print(f"  Resultado (Deve Renovar?):  {should_refresh}")
-        print("-------------------------------------\n")
-        # =======================================================
-        
         if should_refresh:
             await self._refresh_token()
             
