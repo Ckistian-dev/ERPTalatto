@@ -2,19 +2,24 @@
 
 import os
 import httpx
+import asyncio # Importa a biblioteca asyncio para o Lock
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from typing import Optional, List, Dict, Any
 
-# Importa o modelo de credenciais da Tray
 from models.tray_model import TrayCredentials
 
 load_dotenv()
-TRAY_CONSUMER_KEY = os.getenv("TRAY_CONSUMER_KEY")
-TRAY_CONSUMER_SECRET = os.getenv("TRAY_CONSUMER_SECRET")
-TRAY_CALLBACK_URL = os.getenv("TRAY_CALLBACK_URL")
+
+# ===================================================================
+# LOCK GLOBAL PARA CONTROLE DE CONCORRÊNCIA
+# Este dicionário irá armazenar uma "trava" para cada loja que estiver
+# em processo de renovação de token, evitando a condição de corrida.
+# ===================================================================
+refresh_locks: Dict[int, asyncio.Lock] = {}
+
 
 class TrayAPIService:
     """
@@ -32,6 +37,7 @@ class TrayAPIService:
         self.base_url = self.credentials.api_address
 
     async def _refresh_token(self):
+        # A lógica interna de refresh já está correta.
         print(f"Token para a loja Tray {self.store_id} expirado. Tentando renovar...")
         refresh_url = f"{self.base_url}/auth" 
         params = {"refresh_token": self.credentials.refresh_token}
@@ -48,7 +54,6 @@ class TrayAPIService:
                         detail=f"Erro ao renovar token: {token_data.get('message', 'Erro desconhecido')}"
                     )
 
-                # ATUALIZADO para salvar todos os campos novos após a renovação
                 self.credentials.access_token = token_data['access_token']
                 self.credentials.refresh_token = token_data['refresh_token']
                 self.credentials.date_expiration_access_token = token_data['date_expiration_access_token']
@@ -67,80 +72,108 @@ class TrayAPIService:
             )
 
     async def _get_auth_params(self) -> dict:
-        # ATUALIZADO para usar o novo nome do campo
+        """
+        Verifica a validade do token e o renova se necessário, com controle de concorrência.
+        """
         expiration_time = datetime.strptime(self.credentials.date_expiration_access_token, '%Y-%m-%d %H:%M:%S')
         
-        if datetime.now() >= (expiration_time - timedelta(seconds=60)):
-            await self._refresh_token()
+        # Se o token não está prestes a expirar, retorna ele diretamente.
+        if datetime.now() < (expiration_time - timedelta(seconds=60)):
+            return {"access_token": self.credentials.access_token}
+
+        # --- LÓGICA DE LOCK PARA EVITAR CONDIÇÃO DE CORRIDA ---
+        
+        # Cria um lock para esta loja se ainda não existir
+        if self.store_id not in refresh_locks:
+            refresh_locks[self.store_id] = asyncio.Lock()
+        
+        lock = refresh_locks[self.store_id]
+
+        # Tenta "pegar" o lock. Se outro processo já o pegou, este irá esperar aqui.
+        async with lock:
+            # Após conseguir o lock, é crucial recarregar as credenciais do banco.
+            # Pode ser que o processo que estava na nossa frente já tenha atualizado o token.
+            self.credentials = self.db.query(TrayCredentials).filter(TrayCredentials.store_id == self.store_id).one()
             
+            # Re-verifica a data de expiração com os dados atualizados.
+            current_expiration = datetime.strptime(self.credentials.date_expiration_access_token, '%Y-%m-%d %H:%M:%S')
+            
+            # Se o token AINDA estiver expirado, nós somos os responsáveis por renovar.
+            if datetime.now() >= (current_expiration - timedelta(seconds=60)):
+                await self._refresh_token()
+            else:
+                # Se não, significa que outro processo já renovou. Apenas informamos no log.
+                print(f"Token para a loja {self.store_id} já foi renovado por outro processo. Usando o novo token.")
+
         return {"access_token": self.credentials.access_token}
 
 
     async def _make_request(self, method: str, endpoint: str, params: Optional[dict] = None, json_data: Optional[dict] = None) -> dict:
-        # ... (código do passo anterior, sem alterações)
         auth_params = await self._get_auth_params()
         url = f"{self.base_url}{endpoint}"
-        full_params = {**(params or {}), **auth_params}
+        
+        # Garante que o access_token não seja duplicado se já estiver nos params
+        full_params = {**(params or {})}
+        full_params.update(auth_params)
+
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.request(method, url, params=full_params, json=json_data)
                 response.raise_for_status()
                 json_response = response.json()
-                if 'code' in json_response and json_response['code'] not in [200, 201]:
-                     raise HTTPException(status_code=json_response['code'], detail=json_response.get('message', 'Erro retornado pela API da Tray.'))
+                # A API da Tray usa 'code' como string em alguns retornos
+                if 'code' in json_response and str(json_response.get('code')) not in ['200', '201']:
+                     raise HTTPException(status_code=int(json_response['code']), detail=json_response.get('message', 'Erro retornado pela API da Tray.'))
                 return json_response
         except httpx.HTTPStatusError as e:
             raise HTTPException(status_code=e.response.status_code, detail=f"Erro na API da Tray: {e.response.text}")
 
+    # ... (O resto do seu service permanece exatamente igual)
     # ===================================================================
     # MÉTODOS DE INFORMAÇÕES GERAIS
     # ===================================================================
     async def get_store_info(self) -> dict:
-        # ... (código do passo anterior, sem alterações)
         response = await self._make_request("GET", "/informations")
         if "Informations" in response:
             return response["Informations"]
         raise HTTPException(status_code=404, detail="Não foi possível obter informações da loja.")
 
     # ===================================================================
-    # NOVOS MÉTODOS PARA PRODUTOS
+    # MÉTODOS PARA PRODUTOS
     # ===================================================================
     async def get_products_by_sku(self) -> Dict[str, Any]:
-        """
-        Busca todos os produtos da loja na Tray e os organiza em um dicionário por SKU.
-        Isso otimiza a consulta no frontend para verificar quais produtos já existem.
-        """
         all_products = {}
         page = 1
         while True:
-            response = await self._make_request("GET", "/products", params={"page": page, "limit": 50})
-            products = response.get("Products", [])
-            if not products:
-                break
-            
-            for product_wrapper in products:
-                product = product_wrapper.get("Product")
-                if product and product.get("reference"): # 'reference' é o SKU na Tray
-                    all_products[product["reference"]] = {
-                        "id": product.get("id"),
-                        "name": product.get("name"),
-                        "price": product.get("price"),
-                        "stock": product.get("stock"),
-                        "available": product.get("available"),
-                        "url": product.get("url", {}).get("https_image_path")
-                    }
-            
-            # Verifica se há mais páginas
-            if len(products) < 50:
-                break
-            page += 1
+            try:
+                response = await self._make_request("GET", "/products", params={"page": page, "limit": 50})
+                products = response.get("Products", [])
+                if not products:
+                    break
+                
+                for product_wrapper in products:
+                    product = product_wrapper.get("Product")
+                    if product and product.get("reference"):
+                        all_products[product["reference"]] = {
+                            "id": product.get("id"),
+                            "name": product.get("name"),
+                            "price": product.get("price"),
+                            "stock": product.get("stock"),
+                            "available": product.get("available"),
+                            "url": product.get("url", {}).get("https_image_path")
+                        }
+                
+                if len(products) < 50:
+                    break
+                page += 1
+            except HTTPException as e:
+                print(f"Erro ao buscar página {page} de produtos da Tray: {e.detail}")
+                break # Interrompe o loop em caso de erro para não ficar preso
             
         return all_products
 
+    # ... (search_categories, publish_or_update_product, etc. continuam iguais)
     async def search_categories(self, name: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """
-        Busca categorias na Tray pelo nome.
-        """
         response = await self._make_request("GET", "/categories", params={"name": name, "limit": limit})
         categories_found = []
         if "Categories" in response:
@@ -150,16 +183,11 @@ class TrayAPIService:
                     categories_found.append({
                         "id": category.get("id"),
                         "name": category.get("name"),
-                        # A API da Tray fornece o "caminho" da categoria, o que é muito útil
                         "path": category.get("path") 
                     })
         return categories_found
 
     async def publish_or_update_product(self, product_payload: dict, tray_product_id: Optional[int] = None):
-        """
-        Cria (POST) ou atualiza (PUT) um produto na Tray.
-        A API da Tray espera que os dados do produto estejam dentro de um wrapper "Product".
-        """
         endpoint = "/products"
         method = "POST"
         
@@ -167,18 +195,14 @@ class TrayAPIService:
             endpoint = f"/products/{tray_product_id}"
             method = "PUT"
             
-        # A API da Tray espera o payload dentro de um objeto "product"
         wrapped_payload = {"product": product_payload}
         
         return await self._make_request(method, endpoint, json_data=wrapped_payload)
 
     # ===================================================================
-    # NOVOS MÉTODOS PARA PEDIDOS
+    # MÉTODOS PARA PEDIDOS
     # ===================================================================
     async def get_recent_orders(self, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
-        """
-        Busca os pedidos de venda mais recentes do vendedor.
-        """
         page = (offset // limit) + 1
         params = {
             "limit": limit,
@@ -188,29 +212,22 @@ class TrayAPIService:
         return await self._make_request("GET", "/orders", params=params)
 
     async def get_order_details(self, order_id: int) -> Dict[str, Any]:
-        """
-        Busca os detalhes completos de um pedido específico.
-        """
         response = await self._make_request("GET", f"/orders/{order_id}")
         if "Order" in response:
             return response["Order"]
         raise HTTPException(status_code=404, detail=f"Pedido com ID {order_id} não encontrado na Tray.")
     
     # ===================================================================
-    # NOVO MÉTODO PARA BUSCAR DETALHES DE UM PRODUTO
+    # MÉTODO PARA BUSCAR DETALHES DE UM PRODUTO
     # ===================================================================
     async def get_product_details(self, product_id: int) -> Dict[str, Any]:
-        """
-        Busca os detalhes completos de um produto específico.
-        Essencial para o webhook de atualização de estoque.
-        """
         response = await self._make_request("GET", f"/products/{product_id}")
         if "Product" in response:
             return response["Product"]
         raise HTTPException(status_code=404, detail=f"Produto com ID {product_id} não encontrado na Tray.")
     
     # ===================================================================
-    # NOVO MÉTODO PARA ATUALIZAR STATUS E RASTREIO DO PEDIDO (ERP -> TRAY)
+    # MÉTODO PARA ATUALIZAR STATUS E RASTREIO DO PEDIDO (ERP -> TRAY)
     # ===================================================================
     async def update_order_status_and_tracking(
         self, 
@@ -220,24 +237,17 @@ class TrayAPIService:
         shipping_company: Optional[str] = None,
         tracking_url: Optional[str] = None
     ):
-        """
-        Atualiza o status e adiciona informações de rastreio a um pedido na Tray.
-        """
         endpoint = f"/orders/{order_id}"
         
-        # Monta o payload com as informações de envio.
-        # A API da Tray é flexível e aceita diversos campos.
         order_data = {
             "status": status_name,
-            "shipment_code": tracking_code,      # Código de rastreio
-            "shipment": shipping_company,       # Nome da transportadora
-            "shipment_url": tracking_url        # URL para rastreamento direto
+            "shipment_code": tracking_code,
+            "shipment": shipping_company,
+            "shipment_url": tracking_url
         }
 
-        # Remove chaves com valores nulos para não enviar dados desnecessários
         order_data = {k: v for k, v in order_data.items() if v is not None}
 
-        # A API da Tray espera o payload dentro de um objeto "Order"
         wrapped_payload = {"Order": order_data}
         
         print(f"Enviando atualização de status para Tray (Pedido ID: {order_id}): {wrapped_payload}")
