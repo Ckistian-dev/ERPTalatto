@@ -122,36 +122,38 @@ class TrayAPIService:
     # ===================================================================
     # MÉTODOS PARA PRODUTOS
     # ===================================================================
-    async def get_products_by_sku(self) -> Dict[str, Any]:
-        all_products = {}
-        page = 1
-        while True:
-            try:
-                response = await self._make_request("GET", "/products", params={"page": page, "limit": 50})
-                products = response.get("Products", [])
-                if not products:
-                    break
-                
-                for product_wrapper in products:
-                    product = product_wrapper.get("Product")
-                    if product and product.get("reference"):
-                        all_products[product["reference"]] = {
-                            "id": product.get("id"),
-                            "name": product.get("name"),
-                            "price": product.get("price"),
-                            "stock": product.get("stock"),
-                            "available": product.get("available"),
-                            "url": product.get("url", {}).get("https_image_path")
-                        }
-                
-                if len(products) < 50:
-                    break
-                page += 1
-            except HTTPException as e:
-                print(f"Erro ao buscar página {page} de produtos da Tray: {e.detail}")
-                break
-            
-        return all_products
+    async def get_products_by_specific_skus(self, skus: List[str]) -> Dict[str, Any]:
+        """
+        Busca na Tray os detalhes de produtos para uma lista específica de SKUs.
+        Extremamente mais eficiente do que buscar todos os produtos.
+        """
+        if not skus:
+            return {}
+
+        # A API da Tray permite filtrar múltiplos produtos pelo campo 'reference' (SKU),
+        # passando os valores separados por vírgula.
+        skus_csv = ",".join(skus)
+        
+        # O limite é o número de SKUs que estamos pedindo, para garantir que todos venham.
+        params = {"reference": skus_csv, "limit": len(skus)}
+        
+        response = await self._make_request("GET", "/products", params=params)
+        
+        products_by_sku = {}
+        products_list = response.get("Products", [])
+        
+        for product_wrapper in products_list:
+            product = product_wrapper.get("Product")
+            if product and product.get("reference"):
+                products_by_sku[product["reference"]] = {
+                    "id": product.get("id"),
+                    "name": product.get("name"),
+                    "price": product.get("price"),
+                    "stock": product.get("stock"),
+                    "available": product.get("available"),
+                    "url": product.get("url", {}).get("https_image_path")
+                }
+        return products_by_sku
 
     async def search_categories(self, name: str, limit: int = 10) -> List[Dict[str, Any]]:
         response = await self._make_request("GET", "/categories", params={"name": name, "limit": limit})

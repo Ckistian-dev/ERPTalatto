@@ -1,20 +1,44 @@
-// pages/IntegracaoTrayPage.jsx
-
 import React, { useState, useEffect } from "react";
 import { toast } from "react-toastify";
 import axios from "axios";
 import { FaPlug, FaUnlink, FaCog, FaBoxOpen, FaShoppingCart, FaExternalLinkAlt, FaFileImport } from 'react-icons/fa';
 import { useAuth } from '@/context/AuthContext';
-
-// Importa o novo modal de configuração de anúncio da Tray
 import ModalConfigAnuncioTray from '@/components/modals/tray/ModalConfigAnuncioTray';
-import CampoTextsimples from '@/components/campos/CampoTextsimples';
-import ButtonComPermissao from "@/components/buttons/ButtonComPermissao";
 import CampoSenha from '@/components/campos/CampoSenha';
+import ButtonComPermissao from "@/components/buttons/ButtonComPermissao";
 
 const API_URL = import.meta.env.VITE_API_BASE_URL;
 
-// --- Componente para a aba de anúncios (Atualizado para usar o Modal) ---
+// --- Componente de Paginação Reutilizável ---
+// Lógica extraída da sua página do Mercado Livre para ser usada aqui.
+const Paginacao = ({ paginaAtual, setPaginaAtual, totalPaginas }) => {
+    if (totalPaginas <= 1) {
+        return null; // Não mostra a paginação se só houver uma página
+    }
+
+    return (
+        <div className="flex justify-start items-center gap-4 mt-4">
+            <button
+                onClick={() => setPaginaAtual(p => Math.max(p - 1, 1))}
+                disabled={paginaAtual === 1}
+                className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+                Anterior
+            </button>
+            <span>Página {paginaAtual} de {totalPaginas}</span>
+            <button
+                onClick={() => setPaginaAtual(p => Math.min(p + 1, totalPaginas))}
+                disabled={paginaAtual >= totalPaginas}
+                className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+                Próxima
+            </button>
+        </div>
+    );
+};
+
+
+// --- Componente para a aba de anúncios (Atualizado com Paginação) ---
 const AbaAnunciosTray = () => {
     const [anuncios, setAnuncios] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -42,7 +66,7 @@ const AbaAnunciosTray = () => {
 
     useEffect(() => { buscarAnuncios(); }, [paginaAtual]);
     const handleSearch = (e) => { e.preventDefault(); setPaginaAtual(1); buscarAnuncios(); };
-    
+
     const handleOpenModal = (product) => {
         setSelectedProduct(product);
         setShowConfigModal(true);
@@ -61,7 +85,7 @@ const AbaAnunciosTray = () => {
             toast.success(`Anúncio ${payload.tray_listing_id ? 'atualizado' : 'publicado'} com sucesso!`);
             setShowConfigModal(false);
             setSelectedProduct(null);
-            setTimeout(() => { buscarAnuncios(); }, 1000); // Aguarda um pouco para a API refletir a mudança
+            setTimeout(() => { buscarAnuncios(); }, 1000);
         } catch (error) {
             toast.error(error.response?.data?.detail || "Erro desconhecido ao salvar o anúncio.");
         } finally {
@@ -76,7 +100,7 @@ const AbaAnunciosTray = () => {
                 <button type="submit" className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded">Buscar</button>
             </form>
             <div className="overflow-x-auto">
-                 <table className="bg-white border border-gray-300 table-auto whitespace-nowrap w-full">
+                <table className="bg-white border border-gray-300 table-auto whitespace-nowrap w-full">
                     <thead className="bg-gray-100">
                         <tr>
                             <th className="p-2 border text-left">SKU ERP</th>
@@ -88,33 +112,39 @@ const AbaAnunciosTray = () => {
                     </thead>
                     <tbody>
                         {loading ? (<tr><td colSpan="5" className="text-center p-4">Carregando...</td></tr>)
-                        : anuncios.length === 0 ? (<tr><td colSpan="5" className="text-center p-4">Nenhum produto encontrado.</td></tr>)
-                        : (anuncios.map((product) => (
-                            <tr key={product.erp_product.id} className="hover:bg-gray-50">
-                                <td className="p-2 border font-mono">{product.erp_product.sku}</td>
-                                <td className="p-2 border">{product.erp_product.descricao}</td>
-                                <td className="p-2 border">
-                                    {product.tray_listing ? (
-                                        <a href={product.tray_listing.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-2">
-                                            {product.tray_listing.name} <FaExternalLinkAlt size={12} />
-                                        </a>
-                                    ) : (<span className="text-gray-400 italic">Não publicado</span>)}
-                                </td>
-                                <td className="p-2 border text-center">
-                                    {product.tray_listing ? (<span className="px-2 py-1 text-xs font-semibold text-green-800 bg-green-200 rounded-full">Sincronizado</span>) : (<span className="px-2 py-1 text-xs font-semibold text-gray-800 bg-gray-200 rounded-full">Não Sinc.</span>)}
-                                </td>
-                                <td className="p-2 border text-center">
-                                    {/* Botão de Ações agora abre o modal */}
-                                    <button onClick={() => handleOpenModal(product)} title={product.tray_listing ? "Editar Anúncio" : "Publicar na Tray"} className="text-blue-500 hover:text-blue-700 mx-1"><FaCog /></button>
-                                </td>
-                            </tr>
-                        )))}
+                            : anuncios.length === 0 ? (<tr><td colSpan="5" className="text-center p-4">Nenhum produto encontrado.</td></tr>)
+                                : (anuncios.map((product) => (
+                                    <tr key={product.erp_product.id} className="hover:bg-gray-50">
+                                        <td className="p-2 border font-mono">{product.erp_product.sku}</td>
+                                        <td className="p-2 border">{product.erp_product.descricao}</td>
+                                        <td className="p-2 border">
+                                            {product.tray_listing ? (
+                                                <a href={product.tray_listing.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-2">
+                                                    {product.tray_listing.name} <FaExternalLinkAlt size={12} />
+                                                </a>
+                                            ) : (<span className="text-gray-400 italic">Não publicado</span>)}
+                                        </td>
+                                        <td className="p-2 border text-center">
+                                            {product.tray_listing ? (<span className="px-2 py-1 text-xs font-semibold text-green-800 bg-green-200 rounded-full">Sincronizado</span>) : (<span className="px-2 py-1 text-xs font-semibold text-gray-800 bg-gray-200 rounded-full">Não Sinc.</span>)}
+                                        </td>
+                                        <td className="p-2 border text-center">
+                                            <button onClick={() => handleOpenModal(product)} title={product.tray_listing ? "Editar Anúncio" : "Publicar na Tray"} className="text-blue-500 hover:text-blue-700 mx-1"><FaCog /></button>
+                                        </td>
+                                    </tr>
+                                )))}
                     </tbody>
                 </table>
             </div>
-            {/* Paginação aqui */}
+            
+            {/* PAGINAÇÃO ADICIONADA AQUI */}
+            {!loading && (
+                <Paginacao
+                    paginaAtual={paginaAtual}
+                    setPaginaAtual={setPaginaAtual}
+                    totalPaginas={totalPaginas}
+                />
+            )}
 
-            {/* Renderização condicional do Modal */}
             {showConfigModal && selectedProduct && (
                 <ModalConfigAnuncioTray
                     product={selectedProduct}
@@ -127,9 +157,7 @@ const AbaAnunciosTray = () => {
     );
 };
 
-// --- O restante dos componentes (AbaPedidosTray, IntegracaoTrayPage) permanece o mesmo do passo anterior ---
-// ... (Cole o restante do código da página principal aqui)
-// --- Componente para a aba de Pedidos (Adaptado para Tray) ---
+// --- Componente para a aba de Pedidos (Adaptado com Paginação) ---
 const AbaPedidosTray = () => {
     const [pedidos, setPedidos] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -184,32 +212,44 @@ const AbaPedidosTray = () => {
                     </thead>
                     <tbody>
                         {loading ? (<tr><td colSpan="6" className="text-center p-4">Carregando pedidos...</td></tr>)
-                        : pedidos.length === 0 ? (<tr><td colSpan="6" className="text-center p-4">Nenhum pedido encontrado.</td></tr>)
-                        : (pedidos.map((pedido) => (
-                            <tr key={pedido.id} className="hover:bg-gray-50">
-                                <td className="p-2 border font-mono">#{pedido.id}</td>
-                                <td className="p-2 border">{formatarData(pedido.date)}</td>
-                                <td className="p-2 border">{pedido.Customer?.name || 'N/A'}</td>
-                                <td className="p-2 border text-right">{parseFloat(pedido.total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                                <td className="p-2 border text-center"><span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-200 text-blue-800">{pedido.status}</span></td>
-                                <td className="p-2 border text-center">
-                                    <button onClick={() => handleImportarPedido(pedido.id)} disabled={importandoId === pedido.id} title="Importar para o ERP" className="text-green-600 hover:text-green-800 disabled:text-gray-400">
-                                        {importandoId === pedido.id ? 'Importando...' : <FaFileImport />}
-                                    </button>
-                                </td>
-                            </tr>
-                        )))}
+                            : pedidos.length === 0 ? (<tr><td colSpan="6" className="text-center p-4">Nenhum pedido encontrado.</td></tr>)
+                                : (pedidos.map((pedido) => (
+                                    <tr key={pedido.id} className="hover:bg-gray-50">
+                                        <td className="p-2 border font-mono">#{pedido.id}</td>
+                                        <td className="p-2 border">{formatarData(pedido.date)}</td>
+                                        <td className="p-2 border">{pedido.Customer?.name || 'N/A'}</td>
+                                        <td className="p-2 border text-right">{parseFloat(pedido.total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                                        <td className="p-2 border text-center"><span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-200 text-blue-800">{pedido.status}</span></td>
+                                        <td className="p-2 border text-center">
+                                            <button onClick={() => handleImportarPedido(pedido.id)} disabled={importandoId === pedido.id} title="Importar para o ERP" className="text-green-600 hover:text-green-800 disabled:text-gray-400">
+                                                {importandoId === pedido.id ? 'Importando...' : <FaFileImport />}
+                                            </button>
+                                        </td>
+                                    </tr>
+                                )))}
                     </tbody>
                 </table>
             </div>
+
+            {/* PAGINAÇÃO ADICIONADA AQUI */}
+            {!loading && (
+                <Paginacao
+                    paginaAtual={paginaAtual}
+                    setPaginaAtual={setPaginaAtual}
+                    totalPaginas={totalPaginas}
+                />
+            )}
         </div>
     );
 };
 
+
+// --- Componentes AbaConfiguracoesTray e IntegracaoTrayPage ---
+// (O resto do arquivo permanece exatamente como você já tinha)
+
 const AbaConfiguracoesTray = () => {
     const { usuario } = useAuth();
     const [form, setForm] = useState({
-        // Adiciona os novos campos de credenciais ao estado inicial
         tray_consumer_key: '',
         tray_consumer_secret: '',
         aceite_automatico_pedidos: false,
@@ -256,23 +296,22 @@ const AbaConfiguracoesTray = () => {
     return (
         <div>
             <form id="form-config-tray" onSubmit={handleSave} className="space-y-8">
-                {/* NOVA SEÇÃO PARA CREDENCIAIS */}
                 <div className="p-6 bg-white border rounded-lg shadow-sm">
                     <h3 className="text-lg font-semibold mb-4 text-gray-800">Credenciais da Aplicação</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <CampoSenha 
-                            label="Tray Consumer Key" 
-                            name="tray_consumer_key" 
-                            value={form.tray_consumer_key || ''} 
-                            onChange={handleChange} 
-                            obrigatorio 
+                        <CampoSenha
+                            label="Tray Consumer Key"
+                            name="tray_consumer_key"
+                            value={form.tray_consumer_key || ''}
+                            onChange={handleChange}
+                            obrigatorio
                         />
-                        <CampoSenha 
-                            label="Tray Consumer Secret" 
-                            name="tray_consumer_secret" 
-                            value={form.tray_consumer_secret || ''} 
-                            onChange={handleChange} 
-                            obrigatorio 
+                        <CampoSenha
+                            label="Tray Consumer Secret"
+                            name="tray_consumer_secret"
+                            value={form.tray_consumer_secret || ''}
+                            onChange={handleChange}
+                            obrigatorio
                         />
                     </div>
                 </div>
@@ -291,8 +330,6 @@ const AbaConfiguracoesTray = () => {
     );
 };
 
-
-// --- Componente Principal da Página (Adaptado para Tray) ---
 export default function IntegracaoTrayPage() {
     const [abaAtual, setAbaAtual] = useState("visao_geral");
     const [statusInfo, setStatusInfo] = useState({ status: 'carregando' });
@@ -308,6 +345,10 @@ export default function IntegracaoTrayPage() {
         setStatusInfo({ status: 'carregando' });
         try {
             const { data } = await axios.get(`${API_URL}/tray/status`);
+            
+            // ADICIONE ESTA LINHA
+            console.log("Resposta do backend para /tray/status:", data);
+
             setStatusInfo(data);
         } catch (error) {
             toast.error("Não foi possível verificar o status da integração com a Tray.");
@@ -322,8 +363,9 @@ export default function IntegracaoTrayPage() {
     const handleDisconnect = async () => {
         if (!statusInfo.store_id) return;
         if (!window.confirm(`Tem certeza que deseja desconectar a loja ${statusInfo.store_name} (${statusInfo.store_id})?`)) return;
-        
+
         try {
+            // Supondo que você adicionou o endpoint DELETE que sugeri anteriormente
             await axios.delete(`${API_URL}/tray/credentials/${statusInfo.store_id}`);
             toast.success("Integração desconectada com sucesso!");
             setStatusInfo({ status: 'desconectado' });
@@ -353,7 +395,7 @@ export default function IntegracaoTrayPage() {
                 </div>
             );
             default: return (
-                 <div className="text-center p-8 border-2 border-dashed rounded-lg border-red-400 bg-red-50">
+                <div className="text-center p-8 border-2 border-dashed rounded-lg border-red-400 bg-red-50">
                     <FaUnlink className="mx-auto text-5xl text-red-500 mb-4" />
                     <h2 className="text-2xl font-semibold mb-2 text-red-800">Erro na Conexão</h2>
                     <p className="text-gray-700 mb-6">Não foi possível validar a conexão. O token pode ter sido revogado na Tray.</p>
@@ -364,7 +406,7 @@ export default function IntegracaoTrayPage() {
     };
 
     const renderAbaAtual = () => {
-        if (statusInfo.status !== 'conectado' && abaAtual === 'anuncios' && abaAtual === 'pedidos') {
+        if (statusInfo.status !== 'conectado' && (abaAtual === 'anuncios' || abaAtual === 'pedidos')) {
             return <div className="text-center p-8 text-gray-600">Conecte uma loja na aba "Visão Geral" para acessar esta funcionalidade.</div>;
         }
         switch (abaAtual) {
@@ -374,7 +416,6 @@ export default function IntegracaoTrayPage() {
             case "configuracoes": return <AbaConfiguracoesTray />;
             default: return null;
         }
-    
     };
 
     return (
@@ -391,4 +432,3 @@ export default function IntegracaoTrayPage() {
         </div>
     );
 }
-

@@ -107,25 +107,24 @@ async def start_tray_auth_page(
 
 @router.get("/tray/status", summary="Verifica o status da conexão com a Tray")
 async def get_integration_status(db: Session = Depends(get_db)):
-    try:
-        credentials = db.query(TrayCredentials).first()
-        if not credentials:
-            return {"status": "desconectado"}
-        try:
-            tray_service = TrayAPIService(store_id=credentials.store_id, db=db)
-            store_info = await tray_service.get_store_info()
-            return {
-                "status": "conectado",
-                "store_id": store_info.get("id"),
-                "store_name": store_info.get("name"),
-                "store_email": store_info.get("email"),
-                "store_url": store_info.get("url")
-            }
-        except HTTPException as e:
-            return {"status": "erro_conexao", "detail": e.detail}
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro interno: {e}")
+    """
+    Verifica o status da integração lendo os dados salvos localmente.
+    É mais rápido e mais confiável do que fazer uma chamada de API a cada vez.
+    """
+    credentials = db.query(TrayCredentials).first()
+    
+    if not credentials:
+        return {"status": "desconectado"}
+
+    # O token é validado e renovado automaticamente quando uma chamada REAL é feita (ex: buscar anúncios).
+    # Para o status, apenas precisamos confirmar que as credenciais existem.
+    return {
+        "status": "conectado",
+        "store_id": credentials.store_id,
+        "store_name": credentials.store_name,
+        "store_email": credentials.store_email
+        # O store_url pode ser removido, pois não o salvamos
+    }
 
 @router.get("/tray/callback", summary="Callback de Autenticação da Tray")
 async def tray_auth_callback(
@@ -133,6 +132,13 @@ async def tray_auth_callback(
     api_address: str = Query(...), 
     db: Session = Depends(get_db)
 ):
+    """
+    Endpoint de callback chamado pela Tray após o lojista autorizar a aplicação.
+    - Troca o 'code' de autorização por um 'access_token'.
+    - Busca as informações da loja (nome, e-mail) uma única vez.
+    - Salva todas as credenciais e informações no banco de dados.
+    """
+    # 1. Busca as credenciais da aplicação (consumer_key e secret) salvas no sistema
     config = db.query(TrayConfiguracao).filter(TrayConfiguracao.id == 1).first()
     if not config or not config.tray_consumer_key or not config.tray_consumer_secret:
         raise HTTPException(
@@ -140,6 +146,7 @@ async def tray_auth_callback(
             detail="Credenciais da aplicação Tray (Consumer Key/Secret) não configuradas no sistema."
         )
 
+    # 2. Monta o payload para a requisição de troca do token
     payload = {
         "consumer_key": config.tray_consumer_key,
         "consumer_secret": config.tray_consumer_secret,
@@ -147,61 +154,79 @@ async def tray_auth_callback(
     }
     
     try:
+        # 3. Faz a chamada para a API da Tray para obter o token de acesso
         async with httpx.AsyncClient(base_url=api_address) as client:
             response = await client.post("/auth", data=payload)
             response.raise_for_status()
             token_data = response.json()
 
-            if 'code' in token_data and str(token_data.get('code')) not in ['200', '201']:
-                raise HTTPException(
-                    status_code=400, 
-                    detail=f"Erro da API Tray ao obter token: {token_data.get('message', 'Resposta inválida')}"
-                )
-
-            store_id = int(token_data['store_id'])
-
-            db_credentials = db.query(TrayCredentials).filter(TrayCredentials.store_id == store_id).first()
-            
-            # ATUALIZADO para salvar os novos campos
-            if db_credentials:
-                # Atualiza loja existente
-                db_credentials.access_token = token_data['access_token']
-                db_credentials.refresh_token = token_data['refresh_token']
-                db_credentials.api_address = api_address
-                db_credentials.date_expiration_access_token = token_data['date_expiration_access_token']
-                db_credentials.date_expiration_refresh_token = token_data['date_expiration_refresh_token']
-                db_credentials.date_activated = token_data['date_activated']
-            else:
-                # Cria nova credencial para a loja
-                new_credentials = TrayCredentials(
-                    store_id=store_id,
-                    api_address=api_address,
-                    access_token=token_data['access_token'],
-                    refresh_token=token_data['refresh_token'],
-                    date_expiration_access_token=token_data['date_expiration_access_token'],
-                    date_expiration_refresh_token=token_data['date_expiration_refresh_token'],
-                    date_activated=token_data['date_activated']
-                )
-                db.add(new_credentials)
-            
-            db.commit()
-            
-            return JSONResponse(
-                content={"message": f"Loja {store_id} conectada com sucesso!"}
+        # Valida se a resposta da API, apesar do status 200, contém um erro interno da Tray
+        if 'code' in token_data and str(token_data.get('code')) not in ['200', '201']:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Erro da API Tray ao obter token: {token_data.get('message', 'Resposta inválida')}"
             )
+        
+        store_id = int(token_data['store_id'])
+
+        # 4. Busca os dados da loja (nome/e-mail) usando o token recém-obtido
+        # Para isso, criamos uma instância temporária do serviço em memória
+        temp_credentials = TrayCredentials(
+            store_id=store_id,
+            api_address=api_address,
+            access_token=token_data['access_token'],
+            refresh_token=token_data['refresh_token'],
+            date_expiration_access_token=datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S') # A data aqui é temporária
+        )
+        tray_service = TrayAPIService(store_id=store_id, db=db)
+        tray_service.credentials = temp_credentials # Substitui as credenciais do serviço pela nossa versão em memória
+        
+        store_info = await tray_service.get_store_info()
+
+        # 5. Salva ou atualiza as credenciais e os dados da loja no banco de dados
+        db_credentials = db.query(TrayCredentials).filter(TrayCredentials.store_id == store_id).first()
+        
+        if db_credentials:
+            # Atualiza um registro existente
+            db_credentials.access_token = token_data['access_token']
+            db_credentials.refresh_token = token_data['refresh_token']
+            db_credentials.api_address = api_address
+            db_credentials.date_expiration_access_token = token_data['date_expiration_access_token']
+            db_credentials.date_expiration_refresh_token = token_data['date_expiration_refresh_token']
+            db_credentials.date_activated = token_data['date_activated']
+            db_credentials.store_name = store_info.get("name")
+            db_credentials.store_email = store_info.get("email")
+        else:
+            # Cria um novo registro
+            new_credentials = TrayCredentials(
+                store_id=store_id,
+                api_address=api_address,
+                access_token=token_data['access_token'],
+                refresh_token=token_data['refresh_token'],
+                date_expiration_access_token=token_data['date_expiration_access_token'],
+                date_expiration_refresh_token=token_data['date_expiration_refresh_token'],
+                date_activated=token_data['date_activated'],
+                store_name=store_info.get("name"),
+                store_email=store_info.get("email")
+            )
+            db.add(new_credentials)
+        
+        db.commit()
+        
+        return JSONResponse(content={"message": f"Loja {store_id} conectada com sucesso!"})
 
     except httpx.HTTPStatusError as e:
-        print("Erro na resposta da Tray (com POST e data):", e.response.text)
+        print("Erro na resposta da Tray (callback):", e.response.text)
         raise HTTPException(
             status_code=e.response.status_code, 
-            detail=f"Erro de comunicação ao obter token da Tray: {e.response.text}"
+            detail=f"Erro de comunicação durante o callback da Tray: {e.response.text}"
         )
     except Exception as e:
         db.rollback()
         traceback.print_exc()
         raise HTTPException(
             status_code=500, 
-            detail=f"Ocorreu um erro interno no servidor: {str(e)}"
+            detail=f"Ocorreu um erro interno no servidor durante o callback: {str(e)}"
         )
 
 # ==================================
@@ -218,14 +243,7 @@ async def get_combined_listings(
     if not credentials:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integração Tray não está ativa.")
     
-    tray_service = TrayAPIService(store_id=credentials.store_id, db=db)
-
-    try:
-        tray_items_by_sku = await tray_service.get_products_by_sku()
-    except HTTPException as e:
-        print(f"Aviso: Falha ao buscar produtos da Tray. Exibindo apenas dados do ERP. Erro: {e.detail}")
-        tray_items_by_sku = {}
-
+    # 1. Busca a página atual de produtos do ERP (operação rápida no seu banco)
     conn = pool.get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -234,10 +252,12 @@ async def get_combined_listings(
         if filtro_texto:
             where_clauses.append("(sku LIKE %s OR descricao LIKE %s)")
             valores.extend([f"%{filtro_texto}%", f"%{filtro_texto}%"])
+            
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
         query_total = f"SELECT COUNT(*) as total FROM produtos {where_sql}"
         cursor.execute(query_total, valores)
         total_erp = cursor.fetchone()["total"]
+        
         offset = (page - 1) * limit
         query_produtos = f"SELECT id, sku, descricao, custo_produto, tabela_precos FROM produtos {where_sql} ORDER BY id DESC LIMIT %s OFFSET %s"
         cursor.execute(query_produtos, valores + [limit, offset])
@@ -246,6 +266,20 @@ async def get_combined_listings(
         cursor.close()
         conn.close()
 
+    # 2. Extrai os SKUs APENAS da página atual do ERP
+    skus_on_page = [p["sku"] for p in erp_products if p.get("sku")]
+    
+    tray_items_by_sku = {}
+    if skus_on_page:
+        try:
+            # 3. Busca na Tray os dados APENAS para os SKUs da página atual (operação rápida na API)
+            tray_service = TrayAPIService(store_id=credentials.store_id, db=db)
+            tray_items_by_sku = await tray_service.get_products_by_specific_skus(skus=skus_on_page)
+        except HTTPException as e:
+            print(f"Aviso: Falha ao buscar produtos da Tray. Exibindo apenas dados do ERP. Erro: {e.detail}")
+            tray_items_by_sku = {}
+
+    # 4. Combina os resultados (lógica original, agora muito mais rápida)
     resultados_combinados = []
     for erp_product in erp_products:
         sku = erp_product.get("sku")

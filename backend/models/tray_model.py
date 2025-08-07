@@ -10,37 +10,20 @@ from typing import Optional
 #         MODELO DE CREDENCIAIS
 # ==================================
 class TrayCredentials(Base):
-    """
-    Modelo SQLAlchemy para armazenar as credenciais de autenticação da Tray.
-    Cada registro representa uma loja conectada.
-    VERSÃO ATUALIZADA E PADRONIZADA.
-    """
     __tablename__ = "tray_credentials"
 
-    # Chave primária, o ID da loja na Tray
     store_id = Column(BigInteger, primary_key=True, index=True)
-
-    # O endereço base da API para esta loja (ex: https://api.tray.com.br/v1)
     api_address = Column(String(255), nullable=False)
-
-    # O token de acesso para fazer chamadas à API. Curta duração.
     access_token = Column(String(255), nullable=False)
-
-    # O token de atualização para obter novos access_tokens. Longa duração.
     refresh_token = Column(String(255), nullable=False)
-
-    # --- CAMPOS ATUALIZADOS E NOVOS ---
-
-    # RENOMEADO: Data e hora em que o access_token expira.
     date_expiration_access_token = Column(String(50), nullable=False)
-
-    # NOVO: Data e hora em que o refresh_token expira.
     date_expiration_refresh_token = Column(String(50), nullable=False)
-
-    # NOVO: Data em que as chaves foram ativadas.
     date_activated = Column(String(50), nullable=False)
     
-    # Data e hora da última atualização do registro.
+    # --- NOVOS CAMPOS ADICIONADOS ---
+    store_name = Column(String(255), nullable=True)
+    store_email = Column(String(255), nullable=True)
+    
     last_updated = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 # ==================================
