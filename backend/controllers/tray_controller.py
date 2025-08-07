@@ -133,11 +133,6 @@ async def tray_auth_callback(
     api_address: str = Query(...), 
     db: Session = Depends(get_db)
 ):
-    """
-    Endpoint de callback chamado pela Tray após o lojista autorizar a aplicação.
-    Recebe um 'code' de autorização temporário e o troca por um 'access_token' permanente.
-    """
-    # 1. Busca as credenciais da aplicação (consumer_key e secret) salvas no banco
     config = db.query(TrayConfiguracao).filter(TrayConfiguracao.id == 1).first()
     if not config or not config.tray_consumer_key or not config.tray_consumer_secret:
         raise HTTPException(
@@ -145,7 +140,6 @@ async def tray_auth_callback(
             detail="Credenciais da aplicação Tray (Consumer Key/Secret) não configuradas no sistema."
         )
 
-    # 2. Monta o payload para a requisição de troca do token
     payload = {
         "consumer_key": config.tray_consumer_key,
         "consumer_secret": config.tray_consumer_secret,
@@ -153,71 +147,56 @@ async def tray_auth_callback(
     }
     
     try:
-        # 3. Faz a chamada para a API da Tray para obter o token de acesso
         async with httpx.AsyncClient(base_url=api_address) as client:
-            # A documentação confirma que a chamada é POST com dados 'url-encoded' (parâmetro 'data')
             response = await client.post("/auth", data=payload)
-            
-            # Lança uma exceção se a resposta da API for um erro (ex: 404, 500)
             response.raise_for_status()
-            
             token_data = response.json()
 
-            # 4. Verifica se a resposta, apesar de bem-sucedida, contém um código de erro da Tray
-            # Usamos str() para garantir a comparação correta
             if 'code' in token_data and str(token_data.get('code')) not in ['200', '201']:
                 raise HTTPException(
                     status_code=400, 
                     detail=f"Erro da API Tray ao obter token: {token_data.get('message', 'Resposta inválida')}"
                 )
 
-            # 5. Extrai os dados da resposta. 
-            # A documentação mostra que 'store_id' e os tokens já vêm nesta resposta,
-            # eliminando a necessidade de uma segunda chamada para /informations.
             store_id = int(token_data['store_id'])
-            access_token = token_data['access_token']
-            refresh_token = token_data['refresh_token']
-            
-            # O nome do campo na API é 'date_expiration_access_token', mapeamos para 'date_expires' do seu modelo
-            date_expires = token_data['date_expiration_access_token']
 
-            # 6. Salva as credenciais no banco de dados
             db_credentials = db.query(TrayCredentials).filter(TrayCredentials.store_id == store_id).first()
             
+            # ATUALIZADO para salvar os novos campos
             if db_credentials:
-                # Se a loja já existe, atualiza os tokens
-                db_credentials.access_token = access_token
-                db_credentials.refresh_token = refresh_token
-                db_credentials.date_expires = date_expires
+                # Atualiza loja existente
+                db_credentials.access_token = token_data['access_token']
+                db_credentials.refresh_token = token_data['refresh_token']
                 db_credentials.api_address = api_address
+                db_credentials.date_expiration_access_token = token_data['date_expiration_access_token']
+                db_credentials.date_expiration_refresh_token = token_data['date_expiration_refresh_token']
+                db_credentials.date_activated = token_data['date_activated']
             else:
-                # Se é uma nova loja, cria um novo registro
+                # Cria nova credencial para a loja
                 new_credentials = TrayCredentials(
                     store_id=store_id,
                     api_address=api_address,
-                    access_token=access_token,
-                    refresh_token=refresh_token,
-                    date_expires=date_expires
+                    access_token=token_data['access_token'],
+                    refresh_token=token_data['refresh_token'],
+                    date_expiration_access_token=token_data['date_expiration_access_token'],
+                    date_expiration_refresh_token=token_data['date_expiration_refresh_token'],
+                    date_activated=token_data['date_activated']
                 )
                 db.add(new_credentials)
             
             db.commit()
             
-            # Redireciona para uma página de sucesso ou retorna uma mensagem.
-            # Idealmente, você teria uma página no seu frontend para isso.
             return JSONResponse(
                 content={"message": f"Loja {store_id} conectada com sucesso!"}
             )
 
     except httpx.HTTPStatusError as e:
-        # Captura erros de comunicação com a API da Tray
         print("Erro na resposta da Tray (com POST e data):", e.response.text)
         raise HTTPException(
             status_code=e.response.status_code, 
             detail=f"Erro de comunicação ao obter token da Tray: {e.response.text}"
         )
     except Exception as e:
-        # Captura qualquer outro erro inesperado
         db.rollback()
         traceback.print_exc()
         raise HTTPException(

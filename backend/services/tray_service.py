@@ -32,33 +32,49 @@ class TrayAPIService:
         self.base_url = self.credentials.api_address
 
     async def _refresh_token(self):
-        # ... (código do passo anterior, sem alterações)
         print(f"Token para a loja Tray {self.store_id} expirado. Tentando renovar...")
-        refresh_url = f"{self.base_url}/auth"
+        refresh_url = f"{self.base_url}/auth" 
         params = {"refresh_token": self.credentials.refresh_token}
+        
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(refresh_url, params=params)
                 response.raise_for_status()
                 token_data = response.json()
-                if token_data.get('code') and token_data['code'] != 200:
-                    raise HTTPException(status_code=token_data['code'], detail=f"Erro ao renovar token: {token_data.get('message', 'Erro desconhecido')}")
+
+                if 'code' in token_data and str(token_data.get('code')) not in ['200', '201']:
+                    raise HTTPException(
+                        status_code=token_data.get('code', 400), 
+                        detail=f"Erro ao renovar token: {token_data.get('message', 'Erro desconhecido')}"
+                    )
+
+                # ATUALIZADO para salvar todos os campos novos após a renovação
                 self.credentials.access_token = token_data['access_token']
                 self.credentials.refresh_token = token_data['refresh_token']
-                self.credentials.date_expires = token_data['date_expires']
+                self.credentials.date_expiration_access_token = token_data['date_expiration_access_token']
+                self.credentials.date_expiration_refresh_token = token_data['date_expiration_refresh_token']
+                self.credentials.date_activated = token_data['date_activated']
+                
                 self.db.commit()
                 self.db.refresh(self.credentials)
                 print(f"Token para a loja Tray {self.store_id} foi renovado com sucesso.")
+        
         except httpx.HTTPStatusError as e:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Não foi possível renovar o token. O usuário pode ter revogado o acesso. Erro: {e.response.json()}")
-
+            error_detail = e.response.json() if "json" in e.response.headers.get("content-type", "") else e.response.text
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, 
+                detail=f"Não foi possível renovar o token. O usuário pode ter revogado o acesso. Erro: {error_detail}"
+            )
 
     async def _get_auth_params(self) -> dict:
-        # ... (código do passo anterior, sem alterações)
-        expiration_time = datetime.strptime(self.credentials.date_expires, '%Y-%m-%d %H:%M:%S')
+        # ATUALIZADO para usar o novo nome do campo
+        expiration_time = datetime.strptime(self.credentials.date_expiration_access_token, '%Y-%m-%d %H:%M:%S')
+        
         if datetime.now() >= (expiration_time - timedelta(seconds=60)):
             await self._refresh_token()
+            
         return {"access_token": self.credentials.access_token}
+
 
     async def _make_request(self, method: str, endpoint: str, params: Optional[dict] = None, json_data: Optional[dict] = None) -> dict:
         # ... (código do passo anterior, sem alterações)

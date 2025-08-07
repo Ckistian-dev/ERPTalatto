@@ -9,31 +9,36 @@ from typing import Optional
 # ==================================
 #         MODELO DE CREDENCIAIS
 # ==================================
-# Este modelo armazena as informações de autenticação para CADA loja Tray que se conectar.
-# É o equivalente ao 'MeliCredentials', mas projetado para o fluxo da Tray.
 class TrayCredentials(Base):
     """
     Modelo SQLAlchemy para armazenar as credenciais de autenticação da Tray.
     Cada registro representa uma loja conectada.
+    VERSÃO ATUALIZADA E PADRONIZADA.
     """
     __tablename__ = "tray_credentials"
 
-    # A Tray não fornece um 'user_id' numérico fixo como o Mercado Livre durante a autenticação.
-    # Usaremos o 'store_id' da loja como chave primária e identificador único.
+    # Chave primária, o ID da loja na Tray
     store_id = Column(BigInteger, primary_key=True, index=True)
 
-    # O endereço base da API para esta loja específica (ex: https://api.tray.com.br/v1).
-    # É fornecido durante o callback de autorização e é essencial para todas as chamadas.
+    # O endereço base da API para esta loja (ex: https://api.tray.com.br/v1)
     api_address = Column(String(255), nullable=False)
 
-    # O token de acesso para fazer chamadas à API. Geralmente expira em algumas horas.
+    # O token de acesso para fazer chamadas à API. Curta duração.
     access_token = Column(String(255), nullable=False)
 
-    # O token de atualização para obter novos access_tokens. É de longa duração.
+    # O token de atualização para obter novos access_tokens. Longa duração.
     refresh_token = Column(String(255), nullable=False)
 
-    # Data e hora em que o token expira, conforme retornado pela API da Tray.
-    date_expires = Column(String(50), nullable=False)
+    # --- CAMPOS ATUALIZADOS E NOVOS ---
+
+    # RENOMEADO: Data e hora em que o access_token expira.
+    date_expiration_access_token = Column(String(50), nullable=False)
+
+    # NOVO: Data e hora em que o refresh_token expira.
+    date_expiration_refresh_token = Column(String(50), nullable=False)
+
+    # NOVO: Data em que as chaves foram ativadas.
+    date_activated = Column(String(50), nullable=False)
     
     # Data e hora da última atualização do registro.
     last_updated = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
