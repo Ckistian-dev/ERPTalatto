@@ -128,11 +128,24 @@ async def get_integration_status(db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro interno: {e}")
 
 @router.get("/tray/callback", summary="Callback de Autenticação da Tray")
-async def tray_auth_callback(code: str = Query(...), api_address: str = Query(...), db: Session = Depends(get_db)):
+async def tray_auth_callback(
+    code: str = Query(...), 
+    api_address: str = Query(...), 
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint de callback chamado pela Tray após o lojista autorizar a aplicação.
+    Recebe um 'code' de autorização temporário e o troca por um 'access_token' permanente.
+    """
+    # 1. Busca as credenciais da aplicação (consumer_key e secret) salvas no banco
     config = db.query(TrayConfiguracao).filter(TrayConfiguracao.id == 1).first()
     if not config or not config.tray_consumer_key or not config.tray_consumer_secret:
-        raise HTTPException(status_code=500, detail="Credenciais da aplicação Tray (Consumer Key/Secret) não configuradas no sistema.")
+        raise HTTPException(
+            status_code=500, 
+            detail="Credenciais da aplicação Tray (Consumer Key/Secret) não configuradas no sistema."
+        )
 
+    # 2. Monta o payload para a requisição de troca do token
     payload = {
         "consumer_key": config.tray_consumer_key,
         "consumer_secret": config.tray_consumer_secret,
@@ -140,63 +153,77 @@ async def tray_auth_callback(code: str = Query(...), api_address: str = Query(..
     }
     
     try:
+        # 3. Faz a chamada para a API da Tray para obter o token de acesso
         async with httpx.AsyncClient(base_url=api_address) as client:
-            # =========================================================
-            # ALTERAÇÃO PRINCIPAL AQUI
-            # Troque `data=payload` por `json=payload`
-            # Isso envia os dados como JSON, que é o formato
-            # mais comum esperado por APIs REST.
-            # =========================================================
-            response = await client.post("/auth", json=payload) # <- ALTERADO AQUI
+            # A documentação confirma que a chamada é POST com dados 'url-encoded' (parâmetro 'data')
+            response = await client.post("/auth", data=payload)
             
+            # Lança uma exceção se a resposta da API for um erro (ex: 404, 500)
             response.raise_for_status()
+            
             token_data = response.json()
 
-            if 'code' in token_data and token_data['code'] not in [200, 201]:
-                raise HTTPException(status_code=400, detail=f"Erro da API Tray ao obter token: {token_data.get('message', 'Resposta inválida')}")
+            # 4. Verifica se a resposta, apesar de bem-sucedida, contém um código de erro da Tray
+            # Usamos str() para garantir a comparação correta
+            if 'code' in token_data and str(token_data.get('code')) not in ['200', '201']:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Erro da API Tray ao obter token: {token_data.get('message', 'Resposta inválida')}"
+                )
 
-            # O resto da função continua igual...
-            params = {"access_token": token_data['access_token']}
-            info_response = await client.get("/informations", params=params)
-            info_response.raise_for_status()
-            store_data = info_response.json()
+            # 5. Extrai os dados da resposta. 
+            # A documentação mostra que 'store_id' e os tokens já vêm nesta resposta,
+            # eliminando a necessidade de uma segunda chamada para /informations.
+            store_id = int(token_data['store_id'])
+            access_token = token_data['access_token']
+            refresh_token = token_data['refresh_token']
             
-            store_id_str = store_data.get("Informations", {}).get("id")
-            if not store_id_str:
-                raise HTTPException(status_code=500, detail="Não foi possível obter o ID da loja após a autenticação.")
-            
-            # Convertendo para BigInteger/int
-            store_id = int(store_id_str)
+            # O nome do campo na API é 'date_expiration_access_token', mapeamos para 'date_expires' do seu modelo
+            date_expires = token_data['date_expiration_access_token']
 
+            # 6. Salva as credenciais no banco de dados
             db_credentials = db.query(TrayCredentials).filter(TrayCredentials.store_id == store_id).first()
             
             if db_credentials:
-                db_credentials.access_token = token_data['access_token']
-                db_credentials.refresh_token = token_data['refresh_token']
-                db_credentials.date_expires = token_data['date_expires']
+                # Se a loja já existe, atualiza os tokens
+                db_credentials.access_token = access_token
+                db_credentials.refresh_token = refresh_token
+                db_credentials.date_expires = date_expires
                 db_credentials.api_address = api_address
             else:
+                # Se é uma nova loja, cria um novo registro
                 new_credentials = TrayCredentials(
                     store_id=store_id,
                     api_address=api_address,
-                    access_token=token_data['access_token'],
-                    refresh_token=token_data['refresh_token'],
-                    date_expires=token_data['date_expires']
+                    access_token=access_token,
+                    refresh_token=refresh_token,
+                    date_expires=date_expires
                 )
                 db.add(new_credentials)
             
             db.commit()
-            return JSONResponse(content={"message": f"Loja {store_id} conectada com sucesso!"})
+            
+            # Redireciona para uma página de sucesso ou retorna uma mensagem.
+            # Idealmente, você teria uma página no seu frontend para isso.
+            return JSONResponse(
+                content={"message": f"Loja {store_id} conectada com sucesso!"}
+            )
 
     except httpx.HTTPStatusError as e:
-        # A resposta de erro da Tray chega aqui, e agora deve ser um erro mais claro ou sucesso.
-        # Adicione um print para facilitar o debug caso o erro persista
-        print("Erro na resposta da Tray:", e.response.text)
-        raise HTTPException(status_code=e.response.status_code, detail=f"Erro de comunicação ao obter token da Tray: {e.response.text}")
+        # Captura erros de comunicação com a API da Tray
+        print("Erro na resposta da Tray (com POST e data):", e.response.text)
+        raise HTTPException(
+            status_code=e.response.status_code, 
+            detail=f"Erro de comunicação ao obter token da Tray: {e.response.text}"
+        )
     except Exception as e:
+        # Captura qualquer outro erro inesperado
         db.rollback()
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Ocorreu um erro interno no servidor: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Ocorreu um erro interno no servidor: {str(e)}"
+        )
 
 # ==================================
 #     ENDPOINTS DE PRODUTOS/ANÚNCIOS
@@ -576,3 +603,16 @@ async def handle_tray_webhook(
         )
 
     return {"message": "Notificação recebida com sucesso."}
+
+@router.delete("/tray/credentials/{store_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Remove as credenciais de uma loja")
+def delete_tray_credentials(store_id: int, db: Session = Depends(get_db)):
+    """
+    Desconecta uma loja, removendo suas credenciais do banco de dados.
+    """
+    credentials = db.query(TrayCredentials).filter(TrayCredentials.store_id == store_id).first()
+    if not credentials:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Credenciais não encontradas para a loja especificada.")
+    
+    db.delete(credentials)
+    db.commit()
+    return
