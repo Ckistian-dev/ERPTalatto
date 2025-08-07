@@ -1,25 +1,18 @@
-# services/tray_service.py
-
 import os
 import httpx
-import asyncio # Importa a biblioteca asyncio para o Lock
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from typing import Optional, List, Dict, Any
 
+# Importa o modelo de credenciais da Tray
 from models.tray_model import TrayCredentials
 
 load_dotenv()
-
-# ===================================================================
-# LOCK GLOBAL PARA CONTROLE DE CONCORRÊNCIA
-# Este dicionário irá armazenar uma "trava" para cada loja que estiver
-# em processo de renovação de token, evitando a condição de corrida.
-# ===================================================================
-refresh_locks: Dict[int, asyncio.Lock] = {}
-
+TRAY_CONSUMER_KEY = os.getenv("TRAY_CONSUMER_KEY")
+TRAY_CONSUMER_SECRET = os.getenv("TRAY_CONSUMER_SECRET")
+TRAY_CALLBACK_URL = os.getenv("TRAY_CALLBACK_URL")
 
 class TrayAPIService:
     """
@@ -37,7 +30,6 @@ class TrayAPIService:
         self.base_url = self.credentials.api_address
 
     async def _refresh_token(self):
-        # A lógica interna de refresh já está correta.
         print(f"Token para a loja Tray {self.store_id} expirado. Tentando renovar...")
         refresh_url = f"{self.base_url}/auth" 
         params = {"refresh_token": self.credentials.refresh_token}
@@ -73,38 +65,19 @@ class TrayAPIService:
 
     async def _get_auth_params(self) -> dict:
         """
-        Verifica a validade do token e o renova se necessário, com controle de concorrência.
+        Verifica a validade do token e o renova se necessário, usando UTC para a comparação.
         """
         expiration_time = datetime.strptime(self.credentials.date_expiration_access_token, '%Y-%m-%d %H:%M:%S')
         
-        # Se o token não está prestes a expirar, retorna ele diretamente.
-        if datetime.now() < (expiration_time - timedelta(seconds=60)):
-            return {"access_token": self.credentials.access_token}
-
-        # --- LÓGICA DE LOCK PARA EVITAR CONDIÇÃO DE CORRIDA ---
-        
-        # Cria um lock para esta loja se ainda não existir
-        if self.store_id not in refresh_locks:
-            refresh_locks[self.store_id] = asyncio.Lock()
-        
-        lock = refresh_locks[self.store_id]
-
-        # Tenta "pegar" o lock. Se outro processo já o pegou, este irá esperar aqui.
-        async with lock:
-            # Após conseguir o lock, é crucial recarregar as credenciais do banco.
-            # Pode ser que o processo que estava na nossa frente já tenha atualizado o token.
-            self.credentials = self.db.query(TrayCredentials).filter(TrayCredentials.store_id == self.store_id).one()
+        # ===================================================================
+        # CORREÇÃO FINAL: FUSO HORÁRIO
+        # Usamos datetime.utcnow() para comparar a hora atual em UTC com a
+        # hora de expiração que a API da Tray também fornece em UTC.
+        # Isso resolve o loop de renovação.
+        # ===================================================================
+        if datetime.utcnow() >= (expiration_time - timedelta(seconds=60)):
+            await self._refresh_token()
             
-            # Re-verifica a data de expiração com os dados atualizados.
-            current_expiration = datetime.strptime(self.credentials.date_expiration_access_token, '%Y-%m-%d %H:%M:%S')
-            
-            # Se o token AINDA estiver expirado, nós somos os responsáveis por renovar.
-            if datetime.now() >= (current_expiration - timedelta(seconds=60)):
-                await self._refresh_token()
-            else:
-                # Se não, significa que outro processo já renovou. Apenas informamos no log.
-                print(f"Token para a loja {self.store_id} já foi renovado por outro processo. Usando o novo token.")
-
         return {"access_token": self.credentials.access_token}
 
 
@@ -112,23 +85,20 @@ class TrayAPIService:
         auth_params = await self._get_auth_params()
         url = f"{self.base_url}{endpoint}"
         
-        # Garante que o access_token não seja duplicado se já estiver nos params
         full_params = {**(params or {})}
         full_params.update(auth_params)
-
+        
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.request(method, url, params=full_params, json=json_data)
                 response.raise_for_status()
                 json_response = response.json()
-                # A API da Tray usa 'code' como string em alguns retornos
                 if 'code' in json_response and str(json_response.get('code')) not in ['200', '201']:
                      raise HTTPException(status_code=int(json_response['code']), detail=json_response.get('message', 'Erro retornado pela API da Tray.'))
                 return json_response
         except httpx.HTTPStatusError as e:
             raise HTTPException(status_code=e.response.status_code, detail=f"Erro na API da Tray: {e.response.text}")
 
-    # ... (O resto do seu service permanece exatamente igual)
     # ===================================================================
     # MÉTODOS DE INFORMAÇÕES GERAIS
     # ===================================================================
@@ -168,11 +138,10 @@ class TrayAPIService:
                 page += 1
             except HTTPException as e:
                 print(f"Erro ao buscar página {page} de produtos da Tray: {e.detail}")
-                break # Interrompe o loop em caso de erro para não ficar preso
+                break
             
         return all_products
 
-    # ... (search_categories, publish_or_update_product, etc. continuam iguais)
     async def search_categories(self, name: str, limit: int = 10) -> List[Dict[str, Any]]:
         response = await self._make_request("GET", "/categories", params={"name": name, "limit": limit})
         categories_found = []
