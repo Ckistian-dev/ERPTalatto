@@ -48,7 +48,7 @@ const AbaAnunciosTray = () => {
     const [showConfigModal, setShowConfigModal] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [isSaving, setIsSaving] = useState(false);
-    const itensPorPagina = 15;
+    const itensPorPagina = 10;
 
     const buscarAnuncios = async () => {
         setLoading(true);
@@ -119,7 +119,13 @@ const AbaAnunciosTray = () => {
                                         <td className="p-2 border">{product.erp_product.descricao}</td>
                                         <td className="p-2 border">
                                             {product.tray_listing ? (
-                                                <a href={product.tray_listing.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-2">
+                                                <a
+                                                    href={product.tray_listing.admin_url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-blue-600 hover:underline flex items-center gap-2"
+                                                    title="Abrir no painel da Tray"
+                                                >
                                                     {product.tray_listing.name} <FaExternalLinkAlt size={12} />
                                                 </a>
                                             ) : (<span className="text-gray-400 italic">Não publicado</span>)}
@@ -135,7 +141,7 @@ const AbaAnunciosTray = () => {
                     </tbody>
                 </table>
             </div>
-            
+
             {/* PAGINAÇÃO ADICIONADA AQUI */}
             {!loading && (
                 <Paginacao
@@ -164,7 +170,7 @@ const AbaPedidosTray = () => {
     const [paginaAtual, setPaginaAtual] = useState(1);
     const [totalPaginas, setTotalPaginas] = useState(1);
     const [importandoId, setImportandoId] = useState(null);
-    const itensPorPagina = 15;
+    const itensPorPagina = 10;
 
     const buscarPedidos = async () => {
         setLoading(true);
@@ -345,7 +351,7 @@ export default function IntegracaoTrayPage() {
         setStatusInfo({ status: 'carregando' });
         try {
             const { data } = await axios.get(`${API_URL}/tray/status`);
-            
+
             // ADICIONE ESTA LINHA
             console.log("Resposta do backend para /tray/status:", data);
 

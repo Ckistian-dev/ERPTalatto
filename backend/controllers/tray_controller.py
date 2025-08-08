@@ -133,12 +133,9 @@ async def tray_auth_callback(
     db: Session = Depends(get_db)
 ):
     """
-    Endpoint de callback chamado pela Tray após o lojista autorizar a aplicação.
-    - Troca o 'code' de autorização por um 'access_token'.
-    - Busca as informações da loja (nome, e-mail) uma única vez.
-    - Salva todas as credenciais e informações no banco de dados.
+    Endpoint de callback. Troca o 'code' por um 'access_token',
+    busca os dados da loja e salva tudo no banco de dados.
     """
-    # 1. Busca as credenciais da aplicação (consumer_key e secret) salvas no sistema
     config = db.query(TrayConfiguracao).filter(TrayConfiguracao.id == 1).first()
     if not config or not config.tray_consumer_key or not config.tray_consumer_secret:
         raise HTTPException(
@@ -146,7 +143,6 @@ async def tray_auth_callback(
             detail="Credenciais da aplicação Tray (Consumer Key/Secret) não configuradas no sistema."
         )
 
-    # 2. Monta o payload para a requisição de troca do token
     payload = {
         "consumer_key": config.tray_consumer_key,
         "consumer_secret": config.tray_consumer_secret,
@@ -154,13 +150,12 @@ async def tray_auth_callback(
     }
     
     try:
-        # 3. Faz a chamada para a API da Tray para obter o token de acesso
+        # Passo 1: Trocar o 'code' pelo 'access_token'
         async with httpx.AsyncClient(base_url=api_address) as client:
-            response = await client.post("/auth", data=payload)
-            response.raise_for_status()
-            token_data = response.json()
+            auth_response = await client.post("/auth", data=payload)
+            auth_response.raise_for_status()
+            token_data = auth_response.json()
 
-        # Valida se a resposta da API, apesar do status 200, contém um erro interno da Tray
         if 'code' in token_data and str(token_data.get('code')) not in ['200', '201']:
             raise HTTPException(
                 status_code=400, 
@@ -169,21 +164,20 @@ async def tray_auth_callback(
         
         store_id = int(token_data['store_id'])
 
-        # 4. Busca os dados da loja (nome/e-mail) usando o token recém-obtido
-        # Para isso, criamos uma instância temporária do serviço em memória
-        temp_credentials = TrayCredentials(
-            store_id=store_id,
-            api_address=api_address,
-            access_token=token_data['access_token'],
-            refresh_token=token_data['refresh_token'],
-            date_expiration_access_token=datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S') # A data aqui é temporária
-        )
-        tray_service = TrayAPIService(store_id=store_id, db=db)
-        tray_service.credentials = temp_credentials # Substitui as credenciais do serviço pela nossa versão em memória
+        # ===================================================================
+        # CORREÇÃO DA LÓGICA
+        # Em vez de instanciar o TrayAPIService (que busca credenciais no DB),
+        # faremos uma chamada direta ao endpoint /informations usando o token recém-obtido.
+        # ===================================================================
+        info_params = {"access_token": token_data['access_token']}
+        async with httpx.AsyncClient(base_url=api_address) as client:
+            info_response = await client.get("/informations", params=info_params)
+            info_response.raise_for_status()
+            store_info_data = info_response.json()
         
-        store_info = await tray_service.get_store_info()
+        store_info = store_info_data.get("Informations", {})
 
-        # 5. Salva ou atualiza as credenciais e os dados da loja no banco de dados
+        # Passo 3: Salvar tudo no banco de dados
         db_credentials = db.query(TrayCredentials).filter(TrayCredentials.store_id == store_id).first()
         
         if db_credentials:

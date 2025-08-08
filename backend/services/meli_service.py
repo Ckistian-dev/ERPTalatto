@@ -49,7 +49,6 @@ class MeliAPIService:
             self.credentials.access_token = token_data['access_token']
             self.credentials.refresh_token = token_data['refresh_token']
             self.credentials.expires_in = token_data['expires_in']
-            # Atualiza o timestamp para refletir a última atualização do token
             self.credentials.last_updated = datetime.utcnow()
             self.db.commit()
             self.db.refresh(self.credentials)
@@ -59,7 +58,6 @@ class MeliAPIService:
 
     async def _get_auth_header(self) -> dict:
         """Verifica a validade do token e o renova se necessário antes de retornar o cabeçalho."""
-        # Usa UTC para uma comparação de timezone consistente
         expiration_time = self.credentials.last_updated + timedelta(seconds=self.credentials.expires_in - 120)
         if datetime.utcnow() >= expiration_time:
             await self._refresh_token()
@@ -297,3 +295,24 @@ class MeliAPIService:
                 return response.json()
         except httpx.HTTPStatusError as e:
             raise HTTPException(status_code=e.response.status_code, detail=f"Erro ao buscar dados do comprador ID {user_id}: {e.response.json()}")
+
+    # ===================================================================
+    # MÉTODO DE TESTE QUE ESTAVA FALTANDO
+    # ===================================================================
+    async def get_single_item_full_details(self, item_id: str) -> dict:
+        """
+        Busca TODOS os detalhes de um único item, sem filtro de atributos.
+        """
+        auth_header = await self._get_auth_header()
+        url = f"{self.base_url}/items/{item_id}"
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers=auth_header)
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"Erro na API do ML ao buscar detalhes do item {item_id}: {e.response.json()}"
+            )

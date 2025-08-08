@@ -30,7 +30,7 @@ const AbaAnuncios = () => {
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [isSaving, setIsSaving] = useState(false);
     const [modalMode, setModalMode] = useState('create'); // 'create' ou 'link'
-    const itensPorPagina = 15;
+    const itensPorPagina = 10;
 
     const buscarAnuncios = async () => {
         setLoading(true);
@@ -189,7 +189,7 @@ const AbaPedidos = () => {
     const [aceiteAutomatico, setAceiteAutomatico] = useState(false);
     const [pedidosImportados, setPedidosImportados] = useState(new Set());
     const [importandoId, setImportandoId] = useState(null);
-    const itensPorPagina = 15;
+    const itensPorPagina = 10;
 
     useEffect(() => {
         const fetchConfig = async () => {
@@ -203,14 +203,39 @@ const AbaPedidos = () => {
         fetchConfig();
     }, []);
 
-    const buscarPedidos = async () => {
+    const buscarPedidos = async (page) => { // Aceita a página como argumento
         setLoading(true);
         try {
-            const params = { page: paginaAtual, limit: itensPorPagina };
+            const params = { page: page, limit: itensPorPagina };
             const { data } = await axios.get(`${API_URL}/mercadolivre/pedidos`, { params });
-            setPedidos(data.resultados);
+
+            const pedidosDaApi = data.resultados || [];
+            setPedidos(pedidosDaApi); // Atualiza a lista de pedidos na tela
             setTotalPaginas(Math.ceil(data.total / itensPorPagina));
-            return data.resultados;
+
+            // =========================================================
+            // NOVA LÓGICA DE VERIFICAÇÃO AUTOMÁTICA
+            // =========================================================
+            if (pedidosDaApi.length > 0) {
+                // 1. Pega os IDs de todos os pedidos que vieram do ML
+                const orderIds = pedidosDaApi.map(p => p.id);
+
+                // 2. Chama o novo endpoint para saber quais já foram importados
+                const statusResponse = await axios.post(`${API_URL}/mercadolivre/pedidos/verificar-status-importacao`, {
+                    order_ids: orderIds
+                });
+
+                const importedIds = statusResponse.data.imported_ids || [];
+
+                // 3. Atualiza o estado 'pedidosImportados' com a lista completa
+                setPedidosImportados(new Set(importedIds));
+            } else {
+                // Se não vieram pedidos, limpa a lista
+                setPedidosImportados(new Set());
+            }
+            // =========================================================
+
+            return pedidosDaApi; // Retorna os pedidos para uso posterior se necessário
         } catch (error) {
             toast.error(error.response?.data?.detail || "Erro ao buscar pedidos.");
             return [];
@@ -219,9 +244,14 @@ const AbaPedidos = () => {
         }
     };
 
+    // O useEffect principal agora só chama a função de busca
+    useEffect(() => {
+        buscarPedidos(paginaAtual);
+    }, [paginaAtual]); // Dispara a busca sempre que a página mudar
+
     const handleImportarPedido = async (pedidoId) => {
         if (pedidosImportados.has(pedidoId)) {
-            toast.info("Este pedido já foi importado.");
+            toast.info("Este pedido já foi importado nesta sessão.");
             return;
         }
         setImportandoId(pedidoId);
@@ -230,7 +260,18 @@ const AbaPedidos = () => {
             toast.success(`Pedido #${pedidoId} importado para o ERP com sucesso!`);
             setPedidosImportados(prev => new Set(prev).add(pedidoId));
         } catch (error) {
-            toast.error(error.response?.data?.detail || `Erro ao importar o pedido #${pedidoId}.`);
+            // =========================================================
+            // LÓGICA ADICIONADA PARA TRATAR A DUPLICIDADE
+            // =========================================================
+            if (error.response && error.response.status === 409) {
+                toast.warn(error.response.data.detail || `Pedido #${pedidoId} já existe no ERP.`);
+                // Marca como importado na interface para desabilitar o botão
+                setPedidosImportados(prev => new Set(prev).add(pedidoId));
+            } else {
+                // Mantém o tratamento para outros tipos de erro
+                toast.error(error.response?.data?.detail || `Erro ao importar o pedido #${pedidoId}.`);
+            }
+            // =========================================================
         } finally {
             setImportandoId(null);
         }

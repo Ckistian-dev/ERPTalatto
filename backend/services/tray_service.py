@@ -125,33 +125,34 @@ class TrayAPIService:
     async def get_products_by_specific_skus(self, skus: List[str]) -> Dict[str, Any]:
         """
         Busca na Tray os detalhes de produtos para uma lista específica de SKUs.
-        Extremamente mais eficiente do que buscar todos os produtos.
         """
         if not skus:
             return {}
 
-        # A API da Tray permite filtrar múltiplos produtos pelo campo 'reference' (SKU),
-        # passando os valores separados por vírgula.
         skus_csv = ",".join(skus)
-        
-        # O limite é o número de SKUs que estamos pedindo, para garantir que todos venham.
         params = {"reference": skus_csv, "limit": len(skus)}
-        
         response = await self._make_request("GET", "/products", params=params)
         
+        # Pega a URL base da loja, removendo o '/web_api' do final
+        store_base_url = self.base_url.replace("/web_api", "")
+
         products_by_sku = {}
         products_list = response.get("Products", [])
         
         for product_wrapper in products_list:
             product = product_wrapper.get("Product")
             if product and product.get("reference"):
+                product_id = product.get("id")
                 products_by_sku[product["reference"]] = {
-                    "id": product.get("id"),
+                    "id": product_id,
                     "name": product.get("name"),
                     "price": product.get("price"),
                     "stock": product.get("stock"),
                     "available": product.get("available"),
-                    "url": product.get("url", {}).get("https_image_path")
+                    "url": product.get("url", {}).get("product"), # URL da loja (mantemos por segurança)
+                    # --- NOVO CAMPO ADICIONADO ---
+                    # Construímos a URL direta para a edição do produto no painel da Tray
+                    "admin_url": f"{store_base_url}/products_manage.php?id_prod={product_id}"
                 }
         return products_by_sku
 

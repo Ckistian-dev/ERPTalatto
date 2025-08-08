@@ -602,6 +602,8 @@ CREATE TABLE `tray_credentials` (
   `date_expiration_refresh_token` varchar(50) NOT NULL,
   `date_activated` varchar(50) NOT NULL,
   `last_updated` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `store_name` varchar(255) DEFAULT NULL,
+  `store_email` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`store_id`),
   KEY `store_id` (`store_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
@@ -613,6 +615,7 @@ CREATE TABLE `tray_credentials` (
 
 LOCK TABLES `tray_credentials` WRITE;
 /*!40000 ALTER TABLE `tray_credentials` DISABLE KEYS */;
+INSERT INTO `tray_credentials` VALUES (1225878,'https://1225878.commercesuite.com.br/web_api','APP_ID-7283-STORE_ID-1225878-f9c41332f5a1785ebb7314669a520f239008a426146e2fee6cf77369b7e1798a','610c65c6861cfade37e59b5048b1b072f979ef96a3d381779b98bf8b073503e5','2025-08-07 15:29:02','2025-09-06 11:25:23','2025-08-07 11:25:23','2025-08-07 14:29:02',NULL,NULL);
 /*!40000 ALTER TABLE `tray_credentials` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -664,4 +667,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2025-08-07 10:13:51
+-- Dump completed on 2025-08-07 11:38:01

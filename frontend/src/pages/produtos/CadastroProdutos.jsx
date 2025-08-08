@@ -8,6 +8,7 @@ import CampoDropdownEditavel from '@/components/campos/CampoDropdownEditavel';
 import ModalErro from '@/components/modals/ModalErro';
 import ButtonComPermissao from "@/components/buttons/ButtonComPermissao";
 import CampoTextarea from '@/components/campos/CampoTextarea';
+import CampoTextsimples from '@/components/campos/CampoTextsimples';
 import CampoNumSimples from '@/components/campos/CampoNumSimples';
 import CampoNumSetas from "@/components/campos/CampoNumSetas";
 import CampoCodigoBarras from '@/components/campos/CampoCodigoBarras';
@@ -134,7 +135,7 @@ export default function CadastroProduto({ modo = "novo" }) {
       case "produto":
         return (
           <>
-            <CampoNumSetas label="Código (SKU)" name="sku" value={form.sku || ""} onChange={handleChange} obrigatorio placeholder="300" />
+            <CampoTextsimples label="Código (SKU)" name="sku" value={form.sku || ""} onChange={handleChange} obrigatorio placeholder="300" />
             <CampoCodigoBarras label="Código de Barras (EAN-13)" name="codigo_barras" value={form.codigo_barras || ""} onChange={handleChange} obrigatorio />
             <CampoTextarea label="Descrição" name="descricao" value={form.descricao || ""} onChange={handleChange} colSpan obrigatorio placeholder="PAINEL RIPADO VERSATIL" />
             <CampoDropdownEditavel label="Unidade" name="unidade" value={form.unidade || ""} onChange={handleChange} tipo="unidade" usuario={usuario} />
