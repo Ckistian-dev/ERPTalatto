@@ -5,6 +5,7 @@ import httpx
 import json
 import traceback
 import asyncio
+import math
 import mysql.connector.pooling
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
@@ -25,33 +26,59 @@ pool = mysql.connector.pooling.MySQLConnectionPool(
     port=int(os.getenv("DB_PORT"))
 )
 
-# ... (função _executar_formula permanece a mesma) ...
 def _executar_formula(formula: List[Dict[str, Any]], contexto: Dict[str, float]) -> float:
-    if not formula: return 0.0
-    stack = []
+    if not formula:
+        return 0.0
+    
+    valores = []
+    operadores = []
+    precedencia = {'+': 1, '-': 1, '*': 2, '/': 2}
+    
+    def aplicar_operador():
+        op = operadores.pop()
+        right = valores.pop()
+        left = valores.pop()
+        if op == '+': valores.append(left + right)
+        elif op == '-': valores.append(left - right)
+        elif op == '*': valores.append(left * right)
+        elif op == '/': valores.append(left / right if right != 0 else 0)
+
     for comp in formula:
-        if comp['tipo'] == 'variavel':
-            if comp['valor'] not in contexto: raise ValueError(f"Variável desconhecida na fórmula: {comp['valor']}")
-            stack.append(float(contexto[comp['valor']]))
-        else:
-            stack.append(float(comp['valor']))
-            
+        tipo = comp['tipo']
+        valor = comp['valor']
+
+        if tipo == 'numero':
+            valores.append(float(valor))
+        elif tipo == 'variavel':
+            if valor not in contexto:
+                raise ValueError(f"Variável desconhecida na fórmula: {valor}")
+            valores.append(float(contexto[valor]))
+        elif tipo == 'operador':
+            while (operadores and operadores[-1] in precedencia and precedencia.get(operadores[-1], 0) >= precedencia.get(valor, 0)):
+                aplicar_operador()
+            operadores.append(valor)
+
+    while operadores:
+        aplicar_operador()
+
+    return round(valores[0], 4) if valores else 0.0
+
+def _avaliar_condicao(condicao: str, valor_regra: Any, valor_real: int) -> bool:
+    if condicao == "SEMPRE": return True
+    if valor_regra is None: return False
     try:
-        resultado = stack[0]
-        i = 1
-        while i < len(stack):
-            operador, proximo_numero = stack[i], stack[i+1]
-            if operador == '+': resultado += proximo_numero
-            elif operador == '-': resultado -= proximo_numero
-            elif operador == '*': resultado *= proximo_numero
-            elif operador == '/': resultado /= proximo_numero if proximo_numero != 0 else 1
-            i += 2
-        return round(resultado, 4)
-    except (IndexError, TypeError):
-        raise ValueError("Fórmula de embalagem mal formatada.")
+        if condicao == "IGUAL_A": return valor_real == float(valor_regra)
+        if condicao == "MAIOR_QUE": return valor_real > float(valor_regra)
+        if condicao == "MAIOR_IGUAL_A": return valor_real >= float(valor_regra)
+        if condicao == "MENOR_QUE": return valor_real < float(valor_regra)
+        if condicao == "MENOR_IGUAL_A": return valor_real <= float(valor_regra)
+        if condicao == "ENTRE":
+            v1, v2 = map(float, str(valor_regra).split(','))
+            return v1 <= valor_real <= v2
+    except (ValueError, IndexError): return False
+    return False
 
 class IntelipostService:
-    # ... (__init__ permanece o mesmo) ...
     def __init__(self, db: Session):
         self.db = db
         self.base_url = "https://api.intelipost.com.br/api/v1"
@@ -76,7 +103,6 @@ class IntelipostService:
         
         self.client = httpx.AsyncClient(base_url=self.base_url, headers=self.headers, timeout=20.0)
 
-    # ... (métodos de cotação e cálculo de volumes permanecem os mesmos) ...
     def _get_orcamento_data(self, orcamento_id: int) -> Dict[str, Any]:
         """Busca os dados de um orçamento e o CEP do cliente associado."""
         conn = pool.get_connection()
@@ -90,7 +116,7 @@ class IntelipostService:
             cursor.execute("SELECT cep FROM cadastros WHERE id = %s", (orcamento['cliente_id'],))
             cliente = cursor.fetchone()
             if not cliente or not cliente.get('cep'):
-                 raise HTTPException(status_code=404, detail=f"Cliente com ID {orcamento['cliente_id']} ou seu CEP não foram encontrados.")
+                raise HTTPException(status_code=404, detail=f"Cliente com ID {orcamento['cliente_id']} ou seu CEP não foram encontrados.")
 
             orcamento['destination_zip_code'] = cliente['cep']
             return orcamento
@@ -99,7 +125,7 @@ class IntelipostService:
             if conn: conn.close()
             
     async def _calculate_volumes_for_item(self, produto_id: int, quantidade: int) -> List[Dict[str, Any]]:
-        """Lógica de cálculo de volumes para um único item."""
+        """Lógica de cálculo de volumes para um único item, agora com o novo motor de regras."""
         if quantidade <= 0:
             raise ValueError("A quantidade do item deve ser maior que zero.")
 
@@ -122,9 +148,20 @@ class IntelipostService:
             if not produto_data:
                 raise HTTPException(status_code=404, detail=f"Produto com ID {produto_id} não encontrado.")
 
-            if not all(k in produto_data and produto_data[k] is not None for k in ['unidade_caixa', 'peso_embalagem', 'altura_embalagem', 'largura_embalagem', 'comprimento_embalagem']) or produto_data['unidade_caixa'] <= 0:
-                raise HTTPException(status_code=400, detail=f"Produto ID {produto_id} com dados de embalagem padrão incompletos ou inválidos.")
-            
+            unidade_caixa = int(produto_data.get('unidade_caixa') or 0)
+            peso_embalagem_g = float(produto_data.get('peso_embalagem') or 0)
+            altura_embalagem_cm = float(produto_data.get('altura_embalagem') or 0)
+            largura_embalagem_cm = float(produto_data.get('largura_embalagem') or 0)
+            comprimento_embalagem_cm = float(produto_data.get('comprimento_embalagem') or 0)
+
+            if not all([unidade_caixa, peso_embalagem_g, altura_embalagem_cm, largura_embalagem_cm, comprimento_embalagem_cm]):
+                raise HTTPException(status_code=400, detail=f"Produto ID {produto_id} com dados de embalagem padrão incompletos.")
+            if unidade_caixa <= 0:
+                raise HTTPException(status_code=400, detail=f"A 'unidade_caixa' do produto ID {produto_id} deve ser maior que zero.")
+
+            # ####################################################################
+            # INÍCIO DA CORREÇÃO: LÓGICA DE BUSCA DE PREÇO RESTAURADA
+            # ####################################################################
             tabela_precos_raw = produto_data.get('tabela_precos')
             tabela_precos = json.loads(tabela_precos_raw) if isinstance(tabela_precos_raw, str) else tabela_precos_raw
             valor_unitario = 0.0
@@ -139,42 +176,53 @@ class IntelipostService:
                 try:
                     valor_unitario = float(first_price_entry['valor'])
                 except (ValueError, TypeError):
-                    print(f"Aviso: O campo 'valor' na tabela de preços para o produto ID {produto_id} não é um número válido: {first_price_entry['valor']}")
+                    print(f"Aviso: O campo 'valor' na tabela de preços para o produto ID {produto_id} não é um número válido: {first_price_entry.get('valor')}")
                     valor_unitario = 0.0
+            # ####################################################################
+            # FIM DA CORREÇÃO
+            # ####################################################################
 
             volumes_finais = []
-            unidade_caixa = int(produto_data['unidade_caixa'])
-            peso_caixa_kg = float(produto_data['peso_embalagem']) / 1000.0
             volumes_cheios = quantidade // unidade_caixa
             quantidade_restante = quantidade % unidade_caixa
+            peso_caixa_kg = peso_embalagem_g / 1000.0
 
             for _ in range(volumes_cheios):
                 volumes_finais.append({
                     "weight": peso_caixa_kg, "cost_of_goods": round(valor_unitario * unidade_caixa, 2),
-                    "width": float(produto_data['largura_embalagem']), "height": float(produto_data['altura_embalagem']),
-                    "length": float(produto_data['comprimento_embalagem']), "volume_type": "BOX",
+                    "width": largura_embalagem_cm, "height": altura_embalagem_cm,
+                    "length": comprimento_embalagem_cm, "volume_type": "BOX",
                     "products_quantity": unidade_caixa,
                 })
             
             if quantidade_restante > 0:
                 regras_json = produto_data.get('regras')
                 regras = json.loads(regras_json) if isinstance(regras_json, str) else regras_json
+                
+                peso_proporcional_kg = (peso_caixa_kg / unidade_caixa) * quantidade_restante
+                altura_proporcional_cm = (altura_embalagem_cm / unidade_caixa) * quantidade_restante
+                largura_proporcional_cm = (largura_embalagem_cm / unidade_caixa) * quantidade_restante
+                comprimento_proporcional_cm = (comprimento_embalagem_cm / unidade_caixa) * quantidade_restante
+
+                contexto = {
+                    "QTD_RESTANTE": float(quantidade_restante), "QTD_EMBALAGEM": float(unidade_caixa),
+                    "PESO_EMBALAGEM": float(peso_caixa_kg), "ALTURA_EMBALAGEM": float(altura_embalagem_cm),
+                    "LARGURA_EMBALAGEM": float(largura_embalagem_cm), "COMPRIMENTO_EMBALAGEM": float(comprimento_embalagem_cm),
+                    "PESO_PROPORCIONAL": float(peso_proporcional_kg), "ALTURA_PROPORCIONAL": float(altura_proporcional_cm),
+                    "LARGURA_PROPORCIONAL": float(largura_proporcional_cm), "COMPRIMENTO_PROPORCIONAL": float(comprimento_proporcional_cm),
+                    "ACRESCIMO_EMBALAGEM": 2.0
+                }
+
                 regra_aplicada = None
                 if regras:
-                    regras_sorted = sorted(regras, key=lambda r: r.get('prioridade', 0))
+                    regras_sorted = sorted(regras, key=lambda r: r.get('prioridade', 0), reverse=True)
                     for regra in regras_sorted:
-                        if regra.get('condicao_gatilho') == 'SEMPRE':
+                        if _avaliar_condicao(regra.get('condicao_gatilho'), regra.get('valor_gatilho'), quantidade_restante):
                             regra_aplicada = regra
                             break
                 
-                peso_proporcional = (peso_caixa_kg / unidade_caixa) * quantidade_restante
-                contexto = {
-                    "QTD_RESTANTE": quantidade_restante, "QTD_POR_EMBALAGEM": unidade_caixa,
-                    "PESO_PROPORCIONAL": peso_proporcional, "ALTURA_BASE": float(produto_data['altura_embalagem']),
-                    "LARGURA_BASE": float(produto_data['largura_embalagem']), "COMPRIMENTO_BASE": float(produto_data['comprimento_embalagem'])
-                }
-                altura_p, largura_p, comp_p, peso_p = (contexto["ALTURA_BASE"] / unidade_caixa) * quantidade_restante, contexto["LARGURA_BASE"], contexto["COMPRIMENTO_BASE"], peso_proporcional
-
+                altura_p, largura_p, comp_p, peso_p = contexto["ALTURA_EMBALAGEM"], contexto["LARGURA_EMBALAGEM"], contexto["COMPRIMENTO_EMBALAGEM"], contexto["PESO_PROPORCIONAL"]
+                
                 if regra_aplicada:
                     try:
                         if regra_aplicada.get('formula_altura'): altura_p = _executar_formula(regra_aplicada['formula_altura'], contexto)
