@@ -10,6 +10,7 @@ import CampoDropdownDb from "@/components/campos/CampoDropdownDb";
 import CampoValorMonetario from "@/components/campos/CampoValorMonetario";
 import CampoData from "@/components/campos/CampoData";
 import CampoItens from "@/components/campos/CampoItens";
+import CampoNumSetas from "@/components/campos/CampoNumSetas";
 import ModalErro from "@/components/modals/ModalErro";
 import ButtonComPermissao from "@/components/buttons/ButtonComPermissao";
 import CampoPagamento from "@/components/campos/CampoPagamento";
@@ -28,6 +29,8 @@ export default function CadastroOrçamento({ modo = "novo" }) {
     const [precosDisponiveis, setPrecosDisponiveis] = useState([]);
     const [itens, setItens] = useState([]);
     const [modalCotacaoAberto, setModalCotacaoAberto] = useState(false);
+
+    // ATUALIZADO: Adicionado prazo_entrega_dias ao estado inicial
     const [form, setForm] = useState({
         data_emissao: '',
         data_validade: '',
@@ -40,6 +43,7 @@ export default function CadastroOrçamento({ modo = "novo" }) {
         transportadora: '',
         transportadora_nome: '',
         valor_frete: 0,
+        prazo_entrega_dias: null, // <-- NOVO CAMPO
         total: 0,
         desconto_total: 0,
         total_com_desconto: 0,
@@ -51,14 +55,13 @@ export default function CadastroOrçamento({ modo = "novo" }) {
         produto_selecionado: null,
         quantidade_itens: 1,
         tabela_preco_selecionada: null,
-        prazo_entrega_dias: null,
     });
 
     useEffect(() => {
         if (modo === "editar" && location.state?.orcamento) {
             const orcamento = location.state.orcamento;
-            const parsedItens = JSON.parse(orcamento.lista_itens || "[]");
-            const parsedPagamentos = JSON.parse(orcamento.formas_pagamento || "[]");
+            const parsedItens = typeof orcamento.lista_itens === 'string' ? JSON.parse(orcamento.lista_itens || "[]") : orcamento.lista_itens || [];
+            const parsedPagamentos = typeof orcamento.formas_pagamento === 'string' ? JSON.parse(orcamento.formas_pagamento || "[]") : orcamento.formas_pagamento || [];
 
             setItens(parsedItens);
             setForm({
@@ -110,16 +113,11 @@ export default function CadastroOrçamento({ modo = "novo" }) {
 
         setForm((prev) => {
             const novoForm = { ...prev };
-
             novoForm[name] = value;
 
-            if (name === 'cliente') {
-                if (label) novoForm.cliente_nome = label;
-            } else if (name === 'vendedor') {
-                if (label) novoForm.vendedor_nome = label;
-            } else if (name === 'transportadora') {
-                if (label) novoForm.transportadora_nome = label;
-            }
+            if (name === 'cliente' && label) novoForm.cliente_nome = label;
+            else if (name === 'vendedor' && label) novoForm.vendedor_nome = label;
+            else if (name === 'transportadora' && label) novoForm.transportadora_nome = label;
 
             return novoForm;
         });
@@ -128,24 +126,18 @@ export default function CadastroOrçamento({ modo = "novo" }) {
     const handleSubmit = async (e) => {
         e.preventDefault();
 
-        // --- PONTO CRÍTICO DA CORREÇÃO ---
-        // Verifique se o seu payload está sendo montado desta forma.
-        // A lógica `|| null` converte valores "falsy" (como '' ou 0) para null.
         const payload = {
             ...form,
             lista_itens: itens,
             formas_pagamento: form.formas_pagamento || [],
-            cliente_id: form.cliente || null, // Se form.cliente for '', envia null
-            vendedor_id: form.vendedor || null, // Se form.vendedor for '', envia null
-            transportadora_id: form.transportadora || null, // Consistência para transportadora
+            cliente_id: form.cliente || null,
+            vendedor_id: form.vendedor || null,
+            transportadora_id: form.transportadora || null,
         };
 
-        // Removemos os campos originais para não enviá-los duplicados
         delete payload.cliente;
         delete payload.vendedor;
         delete payload.transportadora;
-
-        // ... (o restante da sua lógica de delete e try/catch) ...
         delete payload.importar_orcamento;
         delete payload.produto_selecionado;
         delete payload.produto_selecionado_nome;
@@ -207,8 +199,8 @@ export default function CadastroOrçamento({ modo = "novo" }) {
                 return <CampoItens form={form} setForm={setForm} itens={itens} setItens={setItens} precosDisponiveis={precosDisponiveis} API_URL={API_URL} />;
             case "dados_frete":
                 return (
-                    <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 border-r pr-4">
-                        {/* Campos principais */}
+                    // ATUALIZADO: Layout com 3 colunas e novo campo de prazo
+                    <>
                         <CampoDropdownEditavel
                             label="Tipo de Frete"
                             name="tipo_frete"
@@ -216,9 +208,7 @@ export default function CadastroOrçamento({ modo = "novo" }) {
                             onChange={handleChange}
                             tipo="tipo_frete"
                             usuario={usuario}
-
                         />
-
                         <CampoValorMonetario
                             label="Valor do Frete"
                             name="valor_frete"
@@ -226,7 +216,13 @@ export default function CadastroOrçamento({ modo = "novo" }) {
                             onChange={handleChange}
                             placeholder="0,00"
                         />
-
+                        <CampoNumSetas
+                            label="Prazo de Entrega (dias)"
+                            name="prazo_entrega_dias"
+                            value={form.prazo_entrega_dias || ""}
+                            onChange={handleChange}
+                            placeholder="Número de Dias"
+                        />
                         <CampoDropdownDb
                             label="Transportadora"
                             name="transportadora"
@@ -237,41 +233,26 @@ export default function CadastroOrçamento({ modo = "novo" }) {
                             campoValor="id"
                             campoLabel="nome_razao"
                             disabled={form.tipo_frete === 'Sem Frete'}
-                            colSpan
-                            className="md:col-span-2"
                         />
-
-                        {/* Cotação automática */}
-                        <div className="md:col-span-2">
+                        <div className="col-span-2">
                             <h3 className="font-medium text-gray-700 mb-2">Cotação Automática</h3>
-
                             <ButtonComPermissao
                                 type="button"
                                 onClick={() => setModalCotacaoAberto(true)}
                                 disabled={!itens.length}
-                                className={`
-                        w-full px-4 py-2 
-                        bg-teal-600 hover:bg-teal-700 
-                        text-white rounded-lg 
-                        font-semibold 
-                        flex items-center justify-center gap-2 
-                        transition-all duration-200 
-                        disabled:bg-gray-300 disabled:cursor-not-allowed
-                        shadow-md hover:shadow-lg
-                    `}
+                                className="w-full px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold flex items-center justify-center gap-2 transition-all duration-200 disabled:bg-gray-300 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
                                 permissoes={["admin"]}
                             >
                                 <FaCalculator className="text-white" />
                                 Calcular Frete (Intelipost)
                             </ButtonComPermissao>
-
                             {(!itens.length) && (
                                 <p className="text-xs text-gray-500 mt-2">
                                     Adicione itens para habilitar a cotação.
                                 </p>
                             )}
                         </div>
-                    </div>
+                    </>
                 );
             case "condicoes_pagamento":
                 return <CampoPagamento form={form} setForm={setForm} tipo={"venda"} />;
@@ -292,7 +273,7 @@ export default function CadastroOrçamento({ modo = "novo" }) {
                     <button
                         key={aba.id}
                         onClick={() => setAbaAtual(aba.id)}
-                        className={`px-4 py-2 font-medium rounded-t transition-all duration-200 ${abaAtual === aba.id ? "bg-teal-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
+                        className={`px-4 py-2 font-medium rounded-t transition-all duration-200 whitespace-nowrap ${abaAtual === aba.id ? "bg-teal-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
                     >
                         {aba.label}
                     </button>

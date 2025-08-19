@@ -26,7 +26,6 @@ router = APIRouter()
 
 # --- Modelos Pydantic ---
 
-# ALTERADO: Todos os campos em Itemorcamento e FormaPagamento tornados opcionais.
 class Itemorcamento(BaseModel):
     produto_id: Optional[int] = None
     produto: Optional[str] = None
@@ -48,8 +47,7 @@ class FreteUpdateRequest(BaseModel):
     final_shipping_cost: Optional[float] = 0.0
     delivery_estimate_business_days: Optional[int] = 0
 
-# ALTERADO: Todos os campos em orcamentoCreate foram tornados opcionais.
-# Isso remove a obrigatoriedade na camada de validação da API.
+# ATUALIZADO: Adicionado o campo prazo_entrega_dias
 class orcamentoCreate(BaseModel):
     data_emissao: Optional[str] = None
     data_validade: Optional[str] = None
@@ -66,14 +64,15 @@ class orcamentoCreate(BaseModel):
     total_com_desconto: Optional[float] = 0.0
     tipo_frete: Optional[str] = None
     valor_frete: Optional[float] = 0.0
+    prazo_entrega_dias: Optional[int] = None # <-- NOVO CAMPO
     formas_pagamento: Optional[List[FormaPagamento]] = None
     data_finalizacao: Optional[str] = None
     ordem_finalizacao: Optional[float] = None
     observacao: Optional[str] = None
-    situacao_pedido: Optional[str] = "Aguardando Aprovação" # Mantido um default
+    situacao_pedido: Optional[str] = "Aguardando Aprovação"
 
 
-# Modelos orcamentoUpdate, orcamentoCSV, etc. (sem alterações necessárias, pois já são opcionais)
+# ATUALIZADO: Adicionado o campo prazo_entrega_dias
 class orcamentoUpdate(BaseModel):
     data_emissao: Optional[str] = None
     data_validade: Optional[str] = None
@@ -90,15 +89,16 @@ class orcamentoUpdate(BaseModel):
     total_com_desconto: Optional[float] = None
     tipo_frete: Optional[str] = None
     valor_frete: Optional[float] = None
+    prazo_entrega_dias: Optional[int] = None # <-- NOVO CAMPO
     formas_pagamento: Optional[List[FormaPagamento]] = None
     observacao: Optional[str] = None
     situacao_pedido: Optional[str] = None
-   
+    
 class orcamentoCSV(BaseModel):
     id: Optional[int] = None
-    situacao_pedido: Optional[str] = None # Alterado para opcional
-    data_emissao: Optional[str] = None # Alterado para opcional
-    data_validade: Optional[str] = None # Alterado para opcional
+    situacao_pedido: Optional[str] = None
+    data_emissao: Optional[str] = None
+    data_validade: Optional[str] = None
     cliente_id: Optional[int] = None
     cliente_nome: Optional[str] = None
     vendedor: Optional[int] = None
@@ -108,6 +108,7 @@ class orcamentoCSV(BaseModel):
     transportadora: Optional[int] = None
     transportadora_nome: Optional[str] = None
     valor_frete: Optional[float] = 0.00
+    prazo_entrega_dias: Optional[int] = None # <-- NOVO CAMPO (opcional)
     total: Optional[float] = 0.00
     desconto_total: Optional[float] = 0.00
     total_com_desconto: Optional[float] = 0.00
@@ -119,31 +120,30 @@ class orcamentoCSV(BaseModel):
 class ImportacaoPayloadorcamento(BaseModel):
     registros: List[orcamentoCSV]
 
-# ALTERADO: Rota de criação para lidar com campos que podem ser nulos (None).
+# ATUALIZADO: Rota de criação para incluir o novo campo prazo_entrega_dias
 @router.post("/orcamentos", status_code=status.HTTP_201_CREATED)
 def criar_orcamento(orcamento: orcamentoCreate):
     conn = pool.get_connection()
     cursor = conn.cursor()
     try:
-        # A query continua a mesma, mas os valores passados agora são tratados.
         cursor.execute("""
             INSERT INTO orcamentos (
                 situacao_pedido, data_emissao, data_validade,
                 cliente_id, cliente_nome, vendedor_id, vendedor_nome,
                 origem_venda, tipo_frete, transportadora_id, transportadora_nome,
-                valor_frete, total, desconto_total, total_com_desconto,
+                valor_frete, prazo_entrega_dias, total, desconto_total, total_com_desconto,
                 lista_itens, formas_pagamento, data_finalizacao, ordem_finalizacao, observacao
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             orcamento.situacao_pedido, orcamento.data_emissao, orcamento.data_validade,
             orcamento.cliente_id, orcamento.cliente_nome, orcamento.vendedor_id, orcamento.vendedor_nome,
             orcamento.origem_venda, orcamento.tipo_frete, orcamento.transportadora_id, orcamento.transportadora_nome,
             decimal.Decimal(str(orcamento.valor_frete or 0.00)),
+            orcamento.prazo_entrega_dias, # <-- NOVO VALOR
             decimal.Decimal(str(orcamento.total or 0.00)),
             decimal.Decimal(str(orcamento.desconto_total or 0.00)),
             decimal.Decimal(str(orcamento.total_com_desconto or 0.00)),
-            # Tratamento para listas que podem ser nulas.
             json.dumps([item.dict() for item in orcamento.lista_itens] if orcamento.lista_itens else []),
             json.dumps([forma.dict() for forma in orcamento.formas_pagamento] if orcamento.formas_pagamento else []),
             orcamento.data_finalizacao,
@@ -157,29 +157,21 @@ def criar_orcamento(orcamento: orcamentoCreate):
     finally:
         cursor.close()
         conn.close()
-        
-        
+      
+      
 # --- FUNÇÃO AUXILIAR SIMPLIFICADA PARA CORRESPONDÊNCIA DE NOMES ---
 def _find_carrier_by_word_match(api_name: str, all_carriers: List[Dict]) -> Optional[Dict]:
-    """
-    Encontra a primeira transportadora no cadastro que tenha pelo menos uma
-    palavra em comum com o nome vindo da API.
-    """
     if not api_name or not all_carriers:
         return None
 
-    # Converte o nome da API para um conjunto de palavras em minúsculo
     api_words = set(re.sub(r'[^\w\s]', '', api_name.lower()).split())
     if not api_words:
         return None
 
-    # Itera sobre as transportadoras cadastradas
     for carrier in all_carriers:
-        # Junta o nome/razão e o nome fantasia para uma busca mais completa
         carrier_name = f"{carrier.get('nome_razao') or ''} {carrier.get('fantasia') or ''}"
         carrier_words = set(re.sub(r'[^\w\s]', '', carrier_name.lower()).split())
         
-        # Se houver qualquer palavra em comum (interseção), retorna a transportadora
         if api_words.intersection(carrier_words):
             return carrier
     
@@ -189,10 +181,6 @@ def _find_carrier_by_word_match(api_name: str, all_carriers: List[Dict]) -> Opti
 # --- ENDPOINT ATUALIZADO PARA ATUALIZAR FRETE DO ORÇAMENTO ---
 @router.put("/orcamentos/{orcamento_id}/frete")
 def atualizar_frete_orcamento(orcamento_id: int, frete_update: FreteUpdateRequest):
-    """
-    Atualiza os dados de frete de um orçamento.
-    Busca a transportadora por correspondência de nome e atualiza os campos relevantes.
-    """
     conn = pool.get_connection()
     cursor = conn.cursor(dictionary=True)
     
@@ -200,13 +188,11 @@ def atualizar_frete_orcamento(orcamento_id: int, frete_update: FreteUpdateReques
     transportadora_nome = frete_update.carrier_name_from_api
 
     try:
-        # 1. Busca TODAS as transportadoras cadastradas para a comparação
         cursor.execute(
             "SELECT id, nome_razao, fantasia FROM cadastros WHERE tipo_cadastro = 'Transportadora' AND situacao = 'Ativo'"
         )
         all_carriers = cursor.fetchall()
 
-        # 2. Usa a função de correspondência com o nome vindo da API
         search_name = frete_update.carrier_name_from_api
         matched_carrier = _find_carrier_by_word_match(search_name, all_carriers)
         
@@ -218,7 +204,6 @@ def atualizar_frete_orcamento(orcamento_id: int, frete_update: FreteUpdateReques
             transportadora_nome = search_name
             print(f"Nenhuma correspondência encontrada para: '{search_name}'. Salvando nome da API.")
 
-        # 3. Atualiza o orçamento com os dados de frete
         update_query = """
             UPDATE orcamentos SET
                 transportadora_id = %s,
@@ -302,6 +287,7 @@ def atualizar_orcamento(orcamento_id: int, orcamento_update: orcamentoUpdate):
         conn.close()
 
 
+# ATUALIZADO: Rota de listagem para incluir prazo_entrega_dias nas colunas válidas
 @router.get("/orcamentos/paginado")
 def listar_orcamentos_paginado(
     page: int = 1,
@@ -322,14 +308,13 @@ def listar_orcamentos_paginado(
         where_clauses = []
         valores = []
         
-        # Dicionário para agrupar filtros da mesma coluna
         filtros_agrupados: Dict[str, List[str]] = {}
 
         colunas_validas = [
             "id", "situacao_pedido", "data_emissao", "data_validade",
             "cliente_id", "cliente_nome", "vendedor_id", "vendedor_nome", "origem_venda", "tipo_frete",
-            "transportadora_id", "transportadora_nome", "valor_frete", "total", "desconto_total",
-            "total_com_desconto", "criado_em", "data_finalizacao", "ordem_finalizacao",
+            "transportadora_id", "transportadora_nome", "valor_frete", "prazo_entrega_dias", # <-- NOVO CAMPO
+            "total", "desconto_total", "total_com_desconto", "criado_em", "data_finalizacao", "ordem_finalizacao",
             "hora_expedicao", "usuario_expedicao", "numero_nf", "data_nf"
         ]
 
@@ -342,27 +327,22 @@ def listar_orcamentos_paginado(
             for par in filtros.split(";"):
                 if ":" in par:
                     coluna, texto = par.split(":", 1)
-                    # Adiciona à lista de filtros agrupados
                     if coluna not in filtros_agrupados:
                         filtros_agrupados[coluna] = []
                     filtros_agrupados[coluna].append(texto)
 
-        # Processa os filtros agrupados
         for coluna, textos in filtros_agrupados.items():
-            if coluna in colunas_validas: # Garante que a coluna é válida para evitar injeção SQL
+            if coluna in colunas_validas:
                 if len(textos) > 1:
-                    # Se houver múltiplos valores para a mesma coluna, usa OR
                     or_conditions = []
                     for texto in textos:
                         or_conditions.append(f"{coluna} LIKE %s")
                         valores.append(f"%{texto}%")
                     where_clauses.append(f"({' OR '.join(or_conditions)})")
                 else:
-                    # Se houver apenas um valor, usa LIKE
                     where_clauses.append(f"{coluna} LIKE %s")
                     valores.append(f"%{textos[0]}%")
             else:
-                # Opcional: Logar ou levantar um erro se uma coluna inválida for passada
                 print(f"Aviso: Coluna '{coluna}' no filtro não é válida e será ignorada.")
 
 
@@ -384,7 +364,7 @@ def listar_orcamentos_paginado(
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
         query_total = f"SELECT COUNT(*) as total FROM orcamentos {where_sql}"
-        cursor.execute(query_total, valores) # Os valores já contêm todos os parâmetros para as cláusulas WHERE
+        cursor.execute(query_total, valores)
         total = cursor.fetchone()["total"]
 
         query = f"""
@@ -403,7 +383,6 @@ def listar_orcamentos_paginado(
         }
 
     except Exception as e:
-        # Imprime o traceback completo para depuração
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erro ao listar orcamentos paginados: {str(e)}")
 

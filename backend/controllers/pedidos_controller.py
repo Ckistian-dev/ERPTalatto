@@ -1,8 +1,6 @@
 from fastapi import APIRouter, HTTPException
-# [CORREÇÃO] Adicionado 'validator' para processar os dados de entrada
 from pydantic import BaseModel, validator
 from fastapi import status
-# [CORREÇÃO] Adicionado 'Any' para tipagem mais flexível
 from typing import Optional, List, Dict, Any
 import os
 import traceback
@@ -10,8 +8,7 @@ import mysql.connector.pooling
 import decimal
 import json
 
-
-# Pool de conexão MySQL (sem alterações)
+# Pool de conexão MySQL
 pool = mysql.connector.pooling.MySQLConnectionPool(
     pool_name="pedido_pool",
     pool_size=10,
@@ -27,30 +24,26 @@ router = APIRouter()
 
 # --- Modelos Pydantic ---
 
-# [CORREÇÃO] O modelo do item agora inclui todos os campos necessários para a NF-e.
 class ItemPedido(BaseModel):
     produto_id: int
     produto: str
     quantidade_itens: int
-    tabela_preco_id: Optional[str]
-    tabela_preco: Optional[str]
+    tabela_preco_id: Optional[str] = None
+    tabela_preco: Optional[str] = None
     subtotal: float
-    # --- Novos campos fiscais ---
     sku: Optional[str] = None
     classificacao_fiscal: Optional[str] = None
     origem: Optional[int] = None
     unidade: Optional[str] = None
-    # Adicione outros campos se necessário, como 'cfop'
     cfop: Optional[str] = None
-
 
 class FormaPagamento(BaseModel):
     tipo: str
-    valor_pix: Optional[float]
-    valor_boleto: Optional[float]
-    valor_dinheiro: Optional[float]
-    parcelas: Optional[int]
-    valor_parcela: Optional[float]
+    valor_pix: Optional[float] = None
+    valor_boleto: Optional[float] = None
+    valor_dinheiro: Optional[float] = None
+    parcelas: Optional[int] = None
+    valor_parcela: Optional[float] = None
 
 class PedidoCreate(BaseModel):
     data_emissao: str
@@ -59,8 +52,8 @@ class PedidoCreate(BaseModel):
     cliente_nome: str
     vendedor_id: int
     vendedor_nome: str
-    transportadora_id: int
-    transportadora_nome: Optional[str]
+    transportadora_id: Optional[int] = None
+    transportadora_nome: Optional[str] = None
     origem_venda: str
     lista_itens: List[ItemPedido]
     total: float
@@ -68,6 +61,7 @@ class PedidoCreate(BaseModel):
     total_com_desconto: float
     tipo_frete: str
     valor_frete: float
+    prazo_entrega_dias: Optional[int] = None # <-- CAMPO ADICIONADO
     formas_pagamento: List[FormaPagamento]
     data_finalizacao: Optional[str] = None
     ordem_finalizacao: Optional[float] = None
@@ -76,20 +70,16 @@ class PedidoCreate(BaseModel):
     usuario_expedicao: Optional[str] = None
     numero_nf: Optional[str] = None
     data_nf: Optional[str] = None
-    observacao: Optional[str]
+    observacao: Optional[str] = None
     situacao_pedido: str
     programacao: Optional[Dict[str, Any]] = None
 
-    # Validador para converter strings JSON em dicionários (mantido)
-    @validator('endereco_expedicao', 'programacao', pre=True)
-    def parse_json_string_to_dict(cls, value):
+    @validator('endereco_expedicao', 'programacao', 'lista_itens', 'formas_pagamento', pre=True)
+    def parse_json_fields(cls, value):
         if isinstance(value, str):
-            if value:
-                try:
-                    return json.loads(value)
-                except json.JSONDecodeError:
-                    raise ValueError("A string fornecida não é um JSON válido.")
-            return None
+            if not value: return None
+            try: return json.loads(value)
+            except json.JSONDecodeError: raise ValueError("JSON inválido")
         return value
 
 class PedidoUpdate(BaseModel):
@@ -108,6 +98,7 @@ class PedidoUpdate(BaseModel):
     total_com_desconto: Optional[float] = None
     tipo_frete: Optional[str] = None
     valor_frete: Optional[float] = None
+    prazo_entrega_dias: Optional[int] = None # <-- CAMPO ADICIONADO
     formas_pagamento: Optional[List[FormaPagamento]] = None
     data_finalizacao: Optional[str] = None
     ordem_finalizacao: Optional[float] = None
@@ -120,16 +111,12 @@ class PedidoUpdate(BaseModel):
     situacao_pedido: Optional[str] = None
     programacao: Optional[Dict[str, Any]] = None
 
-    # Validador também para a rota de atualização (mantido)
-    @validator('endereco_expedicao', 'programacao', pre=True)
-    def parse_json_string_to_dict(cls, value):
+    @validator('endereco_expedicao', 'programacao', 'lista_itens', 'formas_pagamento', pre=True)
+    def parse_json_fields(cls, value):
         if isinstance(value, str):
-            if value:
-                try:
-                    return json.loads(value)
-                except json.JSONDecodeError:
-                    raise ValueError("A string fornecida não é um JSON válido.")
-            return None
+            if not value: return None
+            try: return json.loads(value)
+            except json.JSONDecodeError: raise ValueError("JSON inválido")
         return value
 
 class PedidoCSV(BaseModel):
@@ -137,22 +124,23 @@ class PedidoCSV(BaseModel):
     situacao_pedido: str
     data_emissao: str
     data_validade: str
-    cliente: Optional[int]
-    cliente_nome: Optional[str]
-    vendedor: Optional[int]
-    vendedor_nome: Optional[str]
-    origem_venda: Optional[str]
-    tipo_frete: Optional[str]
-    transportadora: Optional[int]
-    transportadora_nome: Optional[str]
+    cliente: Optional[int] = None
+    cliente_nome: Optional[str] = None
+    vendedor: Optional[int] = None
+    vendedor_nome: Optional[str] = None
+    origem_venda: Optional[str] = None
+    tipo_frete: Optional[str] = None
+    transportadora: Optional[int] = None
+    transportadora_nome: Optional[str] = None
     valor_frete: Optional[float] = 0.00
+    prazo_entrega_dias: Optional[int] = None # <-- CAMPO ADICIONADO
     total: Optional[float] = 0.00
     desconto_total: Optional[float] = 0.00
     total_com_desconto: Optional[float] = 0.00
-    lista_itens: Optional[Dict] = {}
-    formas_pagamento: Optional[Dict] = {}
+    lista_itens: Optional[Any] = {}
+    formas_pagamento: Optional[Any] = {}
     observacao: Optional[str] = None
-    criado_em: Optional[str]
+    criado_em: Optional[str] = None
 
 class ImportacaoPayloadPedido(BaseModel):
     registros: List[PedidoCSV]
@@ -164,28 +152,26 @@ def criar_pedido(pedido: PedidoCreate):
     conn = pool.get_connection()
     cursor = conn.cursor()
     try:
-        # A query de inserção não precisa de alteração, pois 'lista_itens' é um campo JSON
-        # O importante é que o objeto 'pedido' já contém os dados fiscais corretos.
         cursor.execute("""
             INSERT INTO pedidos (
                 situacao_pedido, data_emissao, data_validade,
                 cliente_id, cliente_nome, vendedor_id, vendedor_nome,
                 origem_venda, tipo_frete, transportadora_id, transportadora_nome,
-                valor_frete, total, desconto_total, total_com_desconto,
+                valor_frete, prazo_entrega_dias, total, desconto_total, total_com_desconto,
                 lista_itens, formas_pagamento, data_finalizacao, ordem_finalizacao, observacao,
                 endereco_expedicao, hora_expedicao, usuario_expedicao,
                 numero_nf, data_nf, programacao
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             pedido.situacao_pedido, pedido.data_emissao, pedido.data_validade,
             pedido.cliente_id, pedido.cliente_nome, pedido.vendedor_id, pedido.vendedor_nome,
             pedido.origem_venda, pedido.tipo_frete, pedido.transportadora_id, pedido.transportadora_nome,
             decimal.Decimal(str(pedido.valor_frete or 0.00)),
+            pedido.prazo_entrega_dias,
             decimal.Decimal(str(pedido.total or 0.00)),
             decimal.Decimal(str(pedido.desconto_total or 0.00)),
             decimal.Decimal(str(pedido.total_com_desconto or 0.00)),
-            # [IMPORTANTE] Agora, o .model_dump() (equivalente a .dict()) incluirá os novos campos fiscais.
             json.dumps([item.model_dump() for item in pedido.lista_itens]),
             json.dumps([forma.model_dump() for forma in pedido.formas_pagamento]),
             pedido.data_finalizacao,
@@ -208,7 +194,6 @@ def criar_pedido(pedido: PedidoCreate):
 def atualizar_pedido(pedido_id: int, pedido_update: PedidoUpdate):
     conn = pool.get_connection()
     cursor = conn.cursor()
-
     update_data = pedido_update.model_dump(exclude_unset=True)
 
     if not update_data:
@@ -221,16 +206,10 @@ def atualizar_pedido(pedido_id: int, pedido_update: PedidoUpdate):
 
         set_clauses = []
         valores = []
-        
         for campo, valor in update_data.items():
             set_clauses.append(f"{campo} = %s")
-
             if campo in ['lista_itens', 'formas_pagamento', 'endereco_expedicao', 'programacao']:
-                # [IMPORTANTE] Garante que a serialização para JSON funcione corretamente
-                if campo == 'lista_itens' and valor is not None:
-                    valores.append(json.dumps([item for item in valor]))
-                else:
-                    valores.append(json.dumps(valor) if valor is not None else None)
+                valores.append(json.dumps(valor) if valor is not None else None)
             elif isinstance(valor, (float, decimal.Decimal)):
                 valores.append(decimal.Decimal(str(valor)))
             else:
@@ -244,17 +223,12 @@ def atualizar_pedido(pedido_id: int, pedido_update: PedidoUpdate):
 
         cursor.execute(query, tuple(valores))
         conn.commit()
-
         return {"mensagem": "Pedido atualizado com sucesso."}
-
     except mysql.connector.Error as err:
         raise HTTPException(status_code=500, detail=f"Erro ao atualizar pedido: {str(err)}")
-
     finally:
         cursor.close()
         conn.close()
-
-# O restante do arquivo permanece igual...
 
 @router.get("/pedidos/paginado")
 def listar_pedidos_paginado(
@@ -270,19 +244,17 @@ def listar_pedidos_paginado(
 ):
     conn = pool.get_connection()
     cursor = conn.cursor(dictionary=True)
-
     try:
         offset = (page - 1) * limit
         where_clauses = []
         valores = []
-        
         filtros_agrupados: Dict[str, List[str]] = {}
 
         colunas_validas = [
             "id", "situacao_pedido", "data_emissao", "data_validade",
             "cliente_id", "cliente_nome", "vendedor_id", "vendedor_nome", "origem_venda", "tipo_frete",
-            "transportadora_id", "transportadora_nome", "valor_frete", "total", "desconto_total",
-            "total_com_desconto", "criado_em", "data_finalizacao", "ordem_finalizacao",
+            "transportadora_id", "transportadora_nome", "valor_frete", "prazo_entrega_dias", # <-- CAMPO ADICIONADO
+            "total", "desconto_total", "total_com_desconto", "criado_em", "data_finalizacao", "ordem_finalizacao",
             "hora_expedicao", "usuario_expedicao", "numero_nf", "data_nf"
         ]
 
@@ -302,10 +274,8 @@ def listar_pedidos_paginado(
         for coluna, textos in filtros_agrupados.items():
             if coluna in colunas_validas:
                 if len(textos) > 1:
-                    or_conditions = []
-                    for texto in textos:
-                        or_conditions.append(f"{coluna} LIKE %s")
-                        valores.append(f"%{texto}%")
+                    or_conditions = [f"{coluna} LIKE %s" for _ in textos]
+                    valores.extend([f"%{texto}%" for texto in textos])
                     where_clauses.append(f"({' OR '.join(or_conditions)})")
                 else:
                     where_clauses.append(f"{coluna} LIKE %s")
@@ -330,28 +300,17 @@ def listar_pedidos_paginado(
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
         query_total = f"SELECT COUNT(*) as total FROM pedidos {where_sql}"
-        cursor.execute(query_total, valores)
+        cursor.execute(query_total, tuple(valores))
         total = cursor.fetchone()["total"]
 
-        query = f"""
-            SELECT * FROM pedidos
-            {where_sql}
-            ORDER BY {ordem_sql}
-            LIMIT %s OFFSET %s
-        """
-
-        cursor.execute(query, valores + [limit, offset])
+        query = f"SELECT * FROM pedidos {where_sql} ORDER BY {ordem_sql} LIMIT %s OFFSET %s"
+        cursor.execute(query, tuple(valores + [limit, offset]))
         resultados = cursor.fetchall()
 
-        return {
-            "total": total,
-            "resultados": resultados
-        }
-
+        return {"total": total, "resultados": resultados}
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erro ao listar pedidos paginados: {str(e)}")
-
     finally:
         cursor.close()
         conn.close()

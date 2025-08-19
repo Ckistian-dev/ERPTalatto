@@ -10,6 +10,7 @@ import CampoDropdownDb from "@/components/campos/CampoDropdownDb";
 import CampoValorMonetario from "@/components/campos/CampoValorMonetario";
 import CampoData from "@/components/campos/CampoData";
 import CampoItens from "@/components/campos/CampoItens";
+import CampoNumSetas from "@/components/campos/CampoNumSetas";
 import ModalErro from "@/components/modals/ModalErro";
 import ButtonComPermissao from "@/components/buttons/ButtonComPermissao";
 import CampoPagamento from "@/components/campos/CampoPagamento";
@@ -29,6 +30,8 @@ export default function CadastroPedido({ modo = "novo" }) {
     const [precosDisponiveis, setPrecosDisponiveis] = useState([]);
     const [itens, setItens] = useState([]);
     const [modalCotacaoAberto, setModalCotacaoAberto] = useState(false);
+
+    // ATUALIZADO: Adicionado prazo_entrega_dias
     const [form, setForm] = useState({
         data_emissao: '',
         data_validade: '',
@@ -41,6 +44,7 @@ export default function CadastroPedido({ modo = "novo" }) {
         transportadora: '',
         transportadora_nome: '',
         valor_frete: 0,
+        prazo_entrega_dias: null, // <-- NOVO CAMPO
         total: 0,
         desconto_total: 0,
         total_com_desconto: 0,
@@ -54,12 +58,11 @@ export default function CadastroPedido({ modo = "novo" }) {
         tabela_preco_selecionada: null,
     });
 
-    // useEffect para popular o formulário no modo de edição (sem alterações)
     useEffect(() => {
         if (modo === "editar" && location.state?.pedido) {
             const pedido = location.state.pedido;
-            const parsedItens = JSON.parse(pedido.lista_itens || "[]");
-            const parsedPagamentos = JSON.parse(pedido.formas_pagamento || "[]");
+            const parsedItens = typeof pedido.lista_itens === 'string' ? JSON.parse(pedido.lista_itens || "[]") : pedido.lista_itens || [];
+            const parsedPagamentos = typeof pedido.formas_pagamento === 'string' ? JSON.parse(pedido.formas_pagamento || "[]") : pedido.formas_pagamento || [];
 
             setItens(parsedItens);
             setForm({
@@ -73,59 +76,36 @@ export default function CadastroPedido({ modo = "novo" }) {
         }
     }, [modo, location]);
 
-    // VVVVVVVV CORREÇÃO ABAIXO VVVVVVVV
-    // useEffect unificado para buscar os preços dos produtos.
-    // Ele agora busca os preços tanto para os itens já na lista (no modo de edição)
-    // quanto para o novo produto selecionado no formulário.
     useEffect(() => {
         const fetchAllPrices = async () => {
-            // 1. Cria um conjunto (Set) para armazenar IDs únicos e evitar buscas repetidas.
             const productIdsToFetch = new Set();
-
-            // 2. Adiciona os IDs dos itens que já estão no pedido.
             itens.forEach(item => {
                 if (item.produto_id) productIdsToFetch.add(item.produto_id);
             });
-
-            // 3. Adiciona o ID do produto que está selecionado no formulário de "Adicionar Item".
             if (form.produto_selecionado) {
                 productIdsToFetch.add(form.produto_selecionado);
             }
 
-            // Se não houver nenhum ID para buscar, não faz nada.
             if (productIdsToFetch.size === 0) {
                 setPrecosDisponiveis([]);
                 return;
             }
 
             try {
-                // 4. Cria uma lista de promessas de busca para cada ID.
                 const pricePromises = Array.from(productIdsToFetch).map(id =>
                     axios.get(`${API_URL}/tabela_precos_por_produto?produto_id=${id}`)
                 );
-
-                // 5. Executa todas as buscas em paralelo.
                 const responses = await Promise.all(pricePromises);
-
-                // 6. Junta os resultados de todas as buscas em uma única lista de preços.
                 const allPriceConfigs = responses.flatMap(res => res.data || []);
-
-                // 7. Atualiza o estado com todas as regras de preço necessárias.
                 setPrecosDisponiveis(allPriceConfigs);
-
             } catch (error) {
                 console.error("Erro ao buscar preços dos produtos:", error);
                 toast.error("Não foi possível carregar as configurações de preço.");
             }
         };
-
         fetchAllPrices();
-        // Roda este efeito sempre que a lista de itens mudar (ao carregar um pedido) ou quando um novo produto for selecionado.
     }, [itens, form.produto_selecionado]);
-    // ^^^^^^^^ CORREÇÃO ACIMA ^^^^^^^^
 
-
-    // useEffect para calcular o total da nota (sem alterações)
     useEffect(() => {
         const totalProdutos = Number(form.total) || 0;
         const valorFrete = Number(form.valor_frete) || 0;
@@ -140,21 +120,15 @@ export default function CadastroPedido({ modo = "novo" }) {
         }
     }, [form.total, form.valor_frete, form.desconto_total]);
 
-    // O restante do arquivo (handleChange, handleSubmit, renderCampos, etc.) permanece o mesmo.
     const handleChange = (e) => {
         const { name, value, label } = e.target;
-
         setForm((prev) => {
             const novoForm = { ...prev };
             novoForm[name] = value;
 
-            if (name === 'cliente') {
-                if (label) novoForm.cliente_nome = label;
-            } else if (name === 'vendedor') {
-                if (label) novoForm.vendedor_nome = label;
-            } else if (name === 'transportadora') {
-                if (label) novoForm.transportadora_nome = label;
-            }
+            if (name === 'cliente' && label) novoForm.cliente_nome = label;
+            else if (name === 'vendedor' && label) novoForm.vendedor_nome = label;
+            else if (name === 'transportadora' && label) novoForm.transportadora_nome = label;
 
             return novoForm;
         });
@@ -189,7 +163,6 @@ export default function CadastroPedido({ modo = "novo" }) {
         delete payload.cliente;
         delete payload.vendedor;
         delete payload.transportadora;
-
         delete payload.importar_orcamento;
         delete payload.produto_selecionado;
         delete payload.produto_selecionado_nome;
@@ -209,7 +182,6 @@ export default function CadastroPedido({ modo = "novo" }) {
             navigate("/pedidos");
         } catch (err) {
             const errorMsg = err?.response?.data?.detail || "Erro ao salvar o pedido.";
-            console.error("Erro do Backend:", err.response?.data);
             setErro(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg, null, 2));
             toast.error("Falha ao salvar. Verifique os erros.");
         }
@@ -247,7 +219,9 @@ export default function CadastroPedido({ modo = "novo" }) {
                                 if (!orc) return;
 
                                 const listaItens = typeof orc.lista_itens === "string" ? JSON.parse(orc.lista_itens || "[]") : orc.lista_itens || [];
+                                const formasPagamento = typeof orc.formas_pagamento === "string" ? JSON.parse(orc.formas_pagamento || "[]") : orc.formas_pagamento || [];
 
+                                // ATUALIZADO: Inclui prazo_entrega_dias na importação
                                 setForm(prev => ({
                                     ...prev,
                                     importar_orcamento: orc.id,
@@ -260,22 +234,24 @@ export default function CadastroPedido({ modo = "novo" }) {
                                     transportadora: orc.transportadora_id,
                                     transportadora_nome: orc.transportadora_nome,
                                     valor_frete: orc.valor_frete,
+                                    prazo_entrega_dias: orc.prazo_entrega_dias, // <-- CAMPO IMPORTADO
                                     observacao: orc.observacao,
-                                    formas_pagamento: typeof orc.formas_pagamento === "string" ? JSON.parse(orc.formas_pagamento || "[]") : orc.formas_pagamento || [],
+                                    formas_pagamento: formasPagamento,
                                     desconto_total: orc.desconto_total,
                                     total_com_desconto: orc.total_com_desconto,
                                 }));
 
                                 setItens(listaItens);
+                                toast.success(`Orçamento #${orc.id} importado com sucesso!`);
                             }}
                             colSpan
                             API_URL={API_URL}
                         />
                         <CampoData label="Data de Emissão" name="data_emissao" value={form.data_emissao || ""} onChange={handleChange} hoje obrigatorio />
-                        <CampoData label="Data de Validade" name="data_validade" value={form.data_validade || ""} onChange={handleChange} hojeMaisDias={7} obrigatorio />
+                        <CampoData label="Data de Validade" name="data_validade" value={form.data_validade || ""} onChange={handleChange} hojeMaisDias={7} />
                         <CampoDropdownDb label="Cliente" name="cliente" value={form.cliente || ""} onChange={handleChange} url={`${API_URL}/cadastros_dropdown`} filtro={{ tipo_cadastro: ["Cliente"] }} campoValor="id" campoLabel="nome_razao" obrigatorio />
                         <CampoDropdownDb label="Vendedor" name="vendedor" value={form.vendedor || ""} onChange={handleChange} url={`${API_URL}/cadastros_dropdown`} filtro={{ tipo_cadastro: ["Vendedor"] }} campoValor="id" campoLabel="nome_razao" obrigatorio />
-                        <CampoDropdownEditavel label="Origem da Venda" name="origem_venda" value={form.origem_venda || ""} onChange={handleChange} tipo="origem_venda" usuario={usuario} obrigatorio />
+                        <CampoDropdownEditavel label="Origem da Venda" name="origem_venda" value={form.origem_venda || ""} onChange={handleChange} tipo="origem_venda" usuario={usuario} />
                         <CampoDropdownEditavel label="Situação do Pedido" name="situacao_pedido" value={form.situacao_pedido || "Aguardando Aprovação"} onChange={handleChange} tipo="situacao_pedido" usuario={usuario} />
                     </>
                 );
@@ -283,8 +259,7 @@ export default function CadastroPedido({ modo = "novo" }) {
                 return <CampoItens form={form} setForm={setForm} itens={itens} setItens={setItens} precosDisponiveis={precosDisponiveis} API_URL={API_URL} />;
             case "dados_frete":
                 return (
-                    <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 border-r pr-4">
-                        {/* Campos principais */}
+                    <>
                         <CampoDropdownEditavel
                             label="Tipo de Frete"
                             name="tipo_frete"
@@ -292,9 +267,7 @@ export default function CadastroPedido({ modo = "novo" }) {
                             onChange={handleChange}
                             tipo="tipo_frete"
                             usuario={usuario}
-                            obrigatorio
                         />
-
                         <CampoValorMonetario
                             label="Valor do Frete"
                             name="valor_frete"
@@ -302,7 +275,13 @@ export default function CadastroPedido({ modo = "novo" }) {
                             onChange={handleChange}
                             placeholder="0,00"
                         />
-
+                        <CampoNumSetas
+                            label="Prazo de Entrega (dias)"
+                            name="prazo_entrega_dias"
+                            value={form.prazo_entrega_dias || ""}
+                            onChange={handleChange}
+                            placeholder="Número de Dias"
+                        />
                         <CampoDropdownDb
                             label="Transportadora"
                             name="transportadora"
@@ -312,43 +291,27 @@ export default function CadastroPedido({ modo = "novo" }) {
                             filtro={{ tipo_cadastro: ["Transportadora"] }}
                             campoValor="id"
                             campoLabel="nome_razao"
-                            obrigatorio={form.tipo_frete !== 'Sem Frete'}
                             disabled={form.tipo_frete === 'Sem Frete'}
-                            colSpan
-                            className="md:col-span-2"
                         />
-
-                        {/* Cotação automática */}
-                        <div className="md:col-span-2">
+                        <div className="col-span-2">
                             <h3 className="font-medium text-gray-700 mb-2">Cotação Automática</h3>
-
                             <ButtonComPermissao
                                 type="button"
                                 onClick={() => setModalCotacaoAberto(true)}
-                                disabled={!form.cliente || !itens.length}
-                                className={`
-                        w-full px-4 py-2 
-                        bg-teal-600 hover:bg-teal-700 
-                        text-white rounded-lg 
-                        font-semibold 
-                        flex items-center justify-center gap-2 
-                        transition-all duration-200 
-                        disabled:bg-gray-300 disabled:cursor-not-allowed
-                        shadow-md hover:shadow-lg
-                    `}
+                                disabled={!itens.length}
+                                className="w-full px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold flex items-center justify-center gap-2 transition-all duration-200 disabled:bg-gray-300 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
                                 permissoes={["admin"]}
                             >
                                 <FaCalculator className="text-white" />
                                 Calcular Frete (Intelipost)
                             </ButtonComPermissao>
-
-                            {(!form.cliente || !itens.length) && (
+                            {(!itens.length) && (
                                 <p className="text-xs text-gray-500 mt-2">
-                                    Selecione um cliente e adicione itens para habilitar a cotação.
+                                    Adicione itens para habilitar a cotação.
                                 </p>
                             )}
                         </div>
-                    </div>
+                    </>
                 );
             case "condicoes_pagamento":
                 return <CampoPagamento form={form} setForm={setForm} tipo={"venda"} />;
@@ -369,7 +332,7 @@ export default function CadastroPedido({ modo = "novo" }) {
                     <button
                         key={aba.id}
                         onClick={() => setAbaAtual(aba.id)}
-                        className={`px-4 py-2 font-medium rounded-t transition-all duration-200 ${abaAtual === aba.id ? "bg-teal-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
+                        className={`px-4 py-2 font-medium rounded-t transition-all duration-200 whitespace-nowrap ${abaAtual === aba.id ? "bg-teal-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
                     >
                         {aba.label}
                     </button>

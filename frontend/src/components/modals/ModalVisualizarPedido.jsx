@@ -13,6 +13,7 @@ const pedidoVazio = {
     tipo_frete: '',
     transportadora_nome: '',
     valor_frete: '',
+    prazo_entrega_dias: '', // <-- NOVO CAMPO
     total: '',
     desconto_total: '',
     total_com_desconto: '',
@@ -103,6 +104,8 @@ export default function ModalVisualizarPedido({ pedido = pedidoVazio, onClose })
                         <div><strong>Tipo de Frete:</strong> {pedido.tipo_frete || '—'}</div>
                         <div><strong>Transportadora:</strong> {pedido.transportadora_nome || '—'}</div>
                         <div><strong>Valor do Frete:</strong> {formatarValor(pedido.valor_frete)}</div>
+                        {/* LINHA ADICIONADA */}
+                        <div><strong>Prazo de Entrega:</strong> {pedido.prazo_entrega_dias ? `${pedido.prazo_entrega_dias} dias úteis` : '—'}</div>
                     </div>
                 </section>
 
