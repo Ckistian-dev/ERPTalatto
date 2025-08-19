@@ -33,21 +33,16 @@ export default function CampoItens({
         }
         return 0;
     };
-
-    // VVVVVVVV CORREÇÃO ABAIXO VVVVVVVV
-    // Função central que calcula todos os valores de um item.
-    // Será usada tanto ao adicionar um novo item quanto para recalcular os itens existentes.
+    
     const calcularValoresItem = (item) => {
         const priceConfig = getPriceConfig(item.tabela_preco_id);
         const quantidade = Number(item.quantidade_itens) || 1;
 
-        // Se a configuração de preço ainda não estiver disponível, retorna o item com valores zerados
-        // para evitar exibir dados incorretos ou causar erros.
         if (!priceConfig || typeof priceConfig.valor === 'undefined') {
             return {
                 ...item,
                 preco_unitario: 0,
-                subtotal: item.subtotal || 0, // Mantém o subtotal original se existir
+                subtotal: item.subtotal || 0,
                 desconto_item: 0,
                 total_com_desconto: 0,
             };
@@ -66,24 +61,15 @@ export default function CampoItens({
         };
     };
 
-    // useEffect CORRIGIDO: Agora ele recalcula os itens quando as regras de preço são carregadas.
     useEffect(() => {
-        // Só executa se tivermos as regras de preço e itens na lista.
         if (precosDisponiveis.length > 0 && Array.isArray(itens)) {
-
-            // 1. Recalcula cada item na lista para garantir que os preços estão atualizados.
             const itensRecalculados = itens.map(calcularValoresItem);
-
-            // 2. Compara a lista antiga com a nova para evitar loops infinitos de renderização.
-            //    Só atualiza o estado se houver alguma mudança nos valores calculados.
             if (JSON.stringify(itens) !== JSON.stringify(itensRecalculados)) {
                 setItens(itensRecalculados);
             }
         }
-    // A dependência de `precosDisponiveis` é crucial. O efeito roda quando os preços chegam da API.
     }, [precosDisponiveis, itens, setItens]);
     
-    // useEffect para atualizar o TOTAL GERAL do formulário (sem alterações na lógica)
     useEffect(() => {
         if (Array.isArray(itens)) {
             const novoTotalGeral = itens.reduce((acc, item) => acc + (item.total_com_desconto || 0), 0);
@@ -95,7 +81,6 @@ export default function CampoItens({
             }));
         }
     }, [itens, setForm]);
-    // ^^^^^^^^ CORREÇÃO ACIMA ^^^^^^^^
 
     const handleChange = (e) => {
         const { name, value, label, item } = e.target;
@@ -103,6 +88,7 @@ export default function CampoItens({
             const novoForm = { ...prev, [name]: value };
             if (label !== undefined) {
                 if (name === "produto_selecionado") {
+                    // [CORREÇÃO] Armazena o objeto completo do produto no novo estado
                     novoForm.produto_selecionado_nome = label;
                     novoForm.produto_selecionado_sku = item?.sku || "";
                     novoForm.tabela_preco_selecionada = "";
@@ -138,14 +124,12 @@ export default function CampoItens({
 
         const itemBase = {
             produto_id: form.produto_selecionado,
-            sku: form.produto_selecionado_sku || "",
             produto: form.produto_selecionado_nome || "Produto",
             quantidade_itens: quantidade,
             tabela_preco_id: form.tabela_preco_selecionada,
             tabela_preco: form.tabela_preco_selecionada_nome || "",
         };
 
-        // Usa a mesma função de cálculo para garantir consistência.
         const novoItemCalculado = calcularValoresItem(itemBase);
         
         if (!novoItemCalculado.preco_unitario && novoItemCalculado.total_com_desconto === 0) {

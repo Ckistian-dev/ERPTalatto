@@ -1,9 +1,5 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime
 from sqlalchemy.sql import func
-
-# Importa a Base declarativa do seu projeto.
-# Certifique-se de que o caminho do import ('from config.database...')
-# está correto de acordo com a estrutura do seu projeto.
 from config.database import Base
 
 class MeliConfiguracao(Base):

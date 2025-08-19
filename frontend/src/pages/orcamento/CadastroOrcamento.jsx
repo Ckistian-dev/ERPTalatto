@@ -14,7 +14,6 @@ import ModalErro from "@/components/modals/ModalErro";
 import ButtonComPermissao from "@/components/buttons/ButtonComPermissao";
 import CampoPagamento from "@/components/campos/CampoPagamento";
 import CampoTextlong from "@/components/campos/CampoTextlong";
-import CampoImportarOrcamento from "@/components/campos/CampoImportarOrcamento";
 import ModalCotacaoIntelipost from "@/components/modals/ModalCotacaoIntelipost";
 
 const API_URL = import.meta.env.VITE_API_BASE_URL;
@@ -37,7 +36,7 @@ export default function CadastroOrçamento({ modo = "novo" }) {
         vendedor: '',
         vendedor_nome: '',
         origem_venda: '',
-        tipo_frete: '',
+        tipo_frete: 'Contratação do Frete por conta do Remente (CIF)',
         transportadora: '',
         transportadora_nome: '',
         valor_frete: 0,
@@ -126,38 +125,27 @@ export default function CadastroOrçamento({ modo = "novo" }) {
         });
     };
 
-    const validarFormulario = () => {
-        const erros = [];
-        if (!form.cliente) erros.push("Cliente é obrigatório.");
-        if (!form.vendedor) erros.push("Vendedor é obrigatório.");
-        if (form.tipo_frete && form.tipo_frete !== 'Sem Frete' && !form.transportadora && !form.transportadora_nome) {
-            erros.push("Transportadora é obrigatória.");
-        }
-        if (!itens || itens.length === 0) erros.push("Adicione pelo menos um item ao orcamento.");
-        return erros;
-    };
-
     const handleSubmit = async (e) => {
         e.preventDefault();
-        const erros = validarFormulario();
-        if (erros.length > 0) {
-            setErro(erros.join("\n"));
-            return;
-        }
 
+        // --- PONTO CRÍTICO DA CORREÇÃO ---
+        // Verifique se o seu payload está sendo montado desta forma.
+        // A lógica `|| null` converte valores "falsy" (como '' ou 0) para null.
         const payload = {
             ...form,
             lista_itens: itens,
             formas_pagamento: form.formas_pagamento || [],
-            cliente_id: form.cliente,
-            vendedor_id: form.vendedor,
-            transportadora_id: form.transportadora,
+            cliente_id: form.cliente || null, // Se form.cliente for '', envia null
+            vendedor_id: form.vendedor || null, // Se form.vendedor for '', envia null
+            transportadora_id: form.transportadora || null, // Consistência para transportadora
         };
 
+        // Removemos os campos originais para não enviá-los duplicados
         delete payload.cliente;
         delete payload.vendedor;
         delete payload.transportadora;
 
+        // ... (o restante da sua lógica de delete e try/catch) ...
         delete payload.importar_orcamento;
         delete payload.produto_selecionado;
         delete payload.produto_selecionado_nome;
@@ -207,11 +195,11 @@ export default function CadastroOrçamento({ modo = "novo" }) {
             case "dados_iniciais":
                 return (
                     <>
-                        <CampoData label="Data de Emissão" name="data_emissao" value={form.data_emissao || ""} onChange={handleChange} hoje obrigatorio />
-                        <CampoData label="Data de Validade" name="data_validade" value={form.data_validade || ""} onChange={handleChange} hojeMaisDias={7} obrigatorio />
-                        <CampoDropdownDb label="Cliente" name="cliente" value={form.cliente || ""} onChange={handleChange} url={`${API_URL}/cadastros_dropdown`} filtro={{ tipo_cadastro: ["Cliente"] }} campoValor="id" campoLabel="nome_razao" obrigatorio />
-                        <CampoDropdownDb label="Vendedor" name="vendedor" value={form.vendedor || ""} onChange={handleChange} url={`${API_URL}/cadastros_dropdown`} filtro={{ tipo_cadastro: ["Vendedor"] }} campoValor="id" campoLabel="nome_razao" obrigatorio />
-                        <CampoDropdownEditavel label="Origem da Venda" name="origem_venda" value={form.origem_venda || ""} onChange={handleChange} tipo="origem_venda" usuario={usuario} obrigatorio />
+                        <CampoData label="Data de Emissão" name="data_emissao" value={form.data_emissao || ""} onChange={handleChange} hoje />
+                        <CampoData label="Data de Validade" name="data_validade" value={form.data_validade || ""} onChange={handleChange} hojeMaisDias={7} />
+                        <CampoDropdownDb label="Cliente" name="cliente" value={form.cliente || ""} onChange={handleChange} url={`${API_URL}/cadastros_dropdown`} filtro={{ tipo_cadastro: ["Cliente"] }} campoValor="id" campoLabel="nome_razao" />
+                        <CampoDropdownDb label="Vendedor" name="vendedor" value={form.vendedor || ""} onChange={handleChange} url={`${API_URL}/cadastros_dropdown`} filtro={{ tipo_cadastro: ["Vendedor"] }} campoValor="id" campoLabel="nome_razao" />
+                        <CampoDropdownEditavel label="Origem da Venda" name="origem_venda" value={form.origem_venda || ""} onChange={handleChange} tipo="origem_venda" usuario={usuario} />
                         <CampoDropdownEditavel label="Situação do Orçamento" name="situacao_pedido" value={form.situacao_pedido || "Aguardando Aprovação"} onChange={handleChange} tipo="situacao_pedido" usuario={usuario} />
                     </>
                 );
@@ -228,7 +216,7 @@ export default function CadastroOrçamento({ modo = "novo" }) {
                             onChange={handleChange}
                             tipo="tipo_frete"
                             usuario={usuario}
-                            obrigatorio
+
                         />
 
                         <CampoValorMonetario
@@ -248,7 +236,6 @@ export default function CadastroOrçamento({ modo = "novo" }) {
                             filtro={{ tipo_cadastro: ["Transportadora"] }}
                             campoValor="id"
                             campoLabel="nome_razao"
-                            obrigatorio={form.tipo_frete !== 'Sem Frete'}
                             disabled={form.tipo_frete === 'Sem Frete'}
                             colSpan
                             className="md:col-span-2"
@@ -261,7 +248,7 @@ export default function CadastroOrçamento({ modo = "novo" }) {
                             <ButtonComPermissao
                                 type="button"
                                 onClick={() => setModalCotacaoAberto(true)}
-                                disabled={!form.cliente || !itens.length}
+                                disabled={!itens.length}
                                 className={`
                         w-full px-4 py-2 
                         bg-teal-600 hover:bg-teal-700 
@@ -278,9 +265,9 @@ export default function CadastroOrçamento({ modo = "novo" }) {
                                 Calcular Frete (Intelipost)
                             </ButtonComPermissao>
 
-                            {(!form.cliente || !itens.length) && (
+                            {(!itens.length) && (
                                 <p className="text-xs text-gray-500 mt-2">
-                                    Selecione um cliente e adicione itens para habilitar a cotação.
+                                    Adicione itens para habilitar a cotação.
                                 </p>
                             )}
                         </div>

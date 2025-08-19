@@ -1,0 +1,9 @@
+TRUNCATE TABLE produtos;
+
+LOAD DATA LOCAL INFILE "C:/Users/sirle/Downloads/Importacao.csv"
+INTO TABLE produtos
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ','
+ENCLOSED BY '"'
+LINES TERMINATED BY '\r\n'
+IGNORE 1 ROWS;

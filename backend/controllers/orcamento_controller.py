@@ -24,62 +24,64 @@ pool = mysql.connector.pooling.MySQLConnectionPool(
 
 router = APIRouter()
 
-# Modelos (Itemorcamento, FormaPagamento, orcamentoCreate, etc.) - Sem alterações
+# --- Modelos Pydantic ---
+
+# ALTERADO: Todos os campos em Itemorcamento e FormaPagamento tornados opcionais.
 class Itemorcamento(BaseModel):
-    produto_id: int
-    produto: str
-    quantidade_itens: int
-    tabela_preco_id: Optional[str]
-    tabela_preco: Optional[str]
-    subtotal: float
+    produto_id: Optional[int] = None
+    produto: Optional[str] = None
+    quantidade_itens: Optional[int] = None
+    tabela_preco_id: Optional[str] = None
+    tabela_preco: Optional[str] = None
+    subtotal: Optional[float] = None
 
 class FormaPagamento(BaseModel):
-    tipo: str
-    valor_pix: Optional[float]
-    valor_boleto: Optional[float]
-    valor_dinheiro: Optional[float]
-    parcelas: Optional[int]
-    valor_parcela: Optional[float]
+    tipo: Optional[str] = None
+    valor_pix: Optional[float] = None
+    valor_boleto: Optional[float] = None
+    valor_dinheiro: Optional[float] = None
+    parcelas: Optional[int] = None
+    valor_parcela: Optional[float] = None
     
-# --- SCHEMA ATUALIZADO PARA ATUALIZAÇÃO DE FRETE ---
 class FreteUpdateRequest(BaseModel):
     carrier_name_from_api: Optional[str] = ""
     final_shipping_cost: Optional[float] = 0.0
     delivery_estimate_business_days: Optional[int] = 0
 
-# ATUALIZADO: Campos renomeados para o padrão do banco
+# ALTERADO: Todos os campos em orcamentoCreate foram tornados opcionais.
+# Isso remove a obrigatoriedade na camada de validação da API.
 class orcamentoCreate(BaseModel):
-    data_emissao: str
-    data_validade: str
-    cliente_id: int  # Renomeado de 'cliente'
-    cliente_nome: str
-    vendedor_id: int  # Renomeado de 'vendedor'
-    vendedor_nome: str
-    transportadora_id: int # Renomeado de 'transportadora'
-    transportadora_nome: Optional[str]
-    origem_venda: str
-    lista_itens: List[Itemorcamento]
-    total: float
-    desconto_total: float
-    total_com_desconto: float
-    tipo_frete: str
-    valor_frete: float
-    formas_pagamento: List[FormaPagamento]
+    data_emissao: Optional[str] = None
+    data_validade: Optional[str] = None
+    cliente_id: Optional[int] = None
+    cliente_nome: Optional[str] = None
+    vendedor_id: Optional[int] = None
+    vendedor_nome: Optional[str] = None
+    transportadora_id: Optional[int] = None
+    transportadora_nome: Optional[str] = None
+    origem_venda: Optional[str] = None
+    lista_itens: Optional[List[Itemorcamento]] = None
+    total: Optional[float] = 0.0
+    desconto_total: Optional[float] = 0.0
+    total_com_desconto: Optional[float] = 0.0
+    tipo_frete: Optional[str] = None
+    valor_frete: Optional[float] = 0.0
+    formas_pagamento: Optional[List[FormaPagamento]] = None
     data_finalizacao: Optional[str] = None
     ordem_finalizacao: Optional[float] = None
-    observacao: Optional[str]
-    situacao_pedido: Optional[str] = None
+    observacao: Optional[str] = None
+    situacao_pedido: Optional[str] = "Aguardando Aprovação" # Mantido um default
 
 
-# ATUALIZADO: Campos renomeados para o padrão do banco
+# Modelos orcamentoUpdate, orcamentoCSV, etc. (sem alterações necessárias, pois já são opcionais)
 class orcamentoUpdate(BaseModel):
     data_emissao: Optional[str] = None
     data_validade: Optional[str] = None
-    cliente_id: Optional[int] = None # Renomeado
+    cliente_id: Optional[int] = None 
     cliente_nome: Optional[str] = None
-    vendedor_id: Optional[int] = None # Renomeado
+    vendedor_id: Optional[int] = None 
     vendedor_nome: Optional[str] = None
-    transportadora_id: Optional[int] = None # Renomeado
+    transportadora_id: Optional[int] = None
     transportadora_nome: Optional[str] = None
     origem_venda: Optional[str] = None
     lista_itens: Optional[List[Itemorcamento]] = None
@@ -91,21 +93,20 @@ class orcamentoUpdate(BaseModel):
     formas_pagamento: Optional[List[FormaPagamento]] = None
     observacao: Optional[str] = None
     situacao_pedido: Optional[str] = None
-    
-    
+   
 class orcamentoCSV(BaseModel):
     id: Optional[int] = None
-    situacao_pedido: str
-    data_emissao: str
-    data_validade: str
-    cliente_id: Optional[int]
-    cliente_nome: Optional[str]
-    vendedor: Optional[int]
-    vendedor_nome: Optional[str]
-    origem_venda: Optional[str]
-    tipo_frete: Optional[str]
-    transportadora: Optional[int]
-    transportadora_nome: Optional[str]
+    situacao_pedido: Optional[str] = None # Alterado para opcional
+    data_emissao: Optional[str] = None # Alterado para opcional
+    data_validade: Optional[str] = None # Alterado para opcional
+    cliente_id: Optional[int] = None
+    cliente_nome: Optional[str] = None
+    vendedor: Optional[int] = None
+    vendedor_nome: Optional[str] = None
+    origem_venda: Optional[str] = None
+    tipo_frete: Optional[str] = None
+    transportadora: Optional[int] = None
+    transportadora_nome: Optional[str] = None
     valor_frete: Optional[float] = 0.00
     total: Optional[float] = 0.00
     desconto_total: Optional[float] = 0.00
@@ -113,18 +114,18 @@ class orcamentoCSV(BaseModel):
     lista_itens: Optional[Dict] = {}
     formas_pagamento: Optional[Dict] = {}
     observacao: Optional[str] = None
-    criado_em: Optional[str]
+    criado_em: Optional[str] = None
 
 class ImportacaoPayloadorcamento(BaseModel):
     registros: List[orcamentoCSV]
 
-# ATUALIZADO: Rota de criação para usar os novos nomes de campos
+# ALTERADO: Rota de criação para lidar com campos que podem ser nulos (None).
 @router.post("/orcamentos", status_code=status.HTTP_201_CREATED)
 def criar_orcamento(orcamento: orcamentoCreate):
     conn = pool.get_connection()
     cursor = conn.cursor()
     try:
-        # Query usa os nomes de coluna corretos, que agora correspondem ao modelo
+        # A query continua a mesma, mas os valores passados agora são tratados.
         cursor.execute("""
             INSERT INTO orcamentos (
                 situacao_pedido, data_emissao, data_validade,
@@ -142,14 +143,15 @@ def criar_orcamento(orcamento: orcamentoCreate):
             decimal.Decimal(str(orcamento.total or 0.00)),
             decimal.Decimal(str(orcamento.desconto_total or 0.00)),
             decimal.Decimal(str(orcamento.total_com_desconto or 0.00)),
-            json.dumps([item.dict() for item in orcamento.lista_itens]),
-            json.dumps([forma.dict() for forma in orcamento.formas_pagamento]),
+            # Tratamento para listas que podem ser nulas.
+            json.dumps([item.dict() for item in orcamento.lista_itens] if orcamento.lista_itens else []),
+            json.dumps([forma.dict() for forma in orcamento.formas_pagamento] if orcamento.formas_pagamento else []),
             orcamento.data_finalizacao,
             decimal.Decimal(str(orcamento.ordem_finalizacao)) if orcamento.ordem_finalizacao is not None else None,
             orcamento.observacao,
         ))
         conn.commit()
-        return {"mensagem": "orcamento criado com sucesso"}
+        return {"mensagem": "Orcamento criado com sucesso"}
     except mysql.connector.Error as err:
         raise HTTPException(status_code=500, detail="Erro no servidor: " + str(err))
     finally:

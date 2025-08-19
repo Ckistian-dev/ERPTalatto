@@ -9,10 +9,11 @@ import mysql.connector.pooling
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from typing import Dict, Any, List
+from datetime import datetime
 
 from models.intelipost_model import IntelipostConfiguracao
 
-# --- Pool de conexão MySQL (adaptado de seus outros controllers) ---
+# --- Pool de conexão MySQL ---
 pool = mysql.connector.pooling.MySQLConnectionPool(
     pool_name="intelipost_pool",
     pool_size=5,
@@ -24,8 +25,8 @@ pool = mysql.connector.pooling.MySQLConnectionPool(
     port=int(os.getenv("DB_PORT"))
 )
 
+# ... (função _executar_formula permanece a mesma) ...
 def _executar_formula(formula: List[Dict[str, Any]], contexto: Dict[str, float]) -> float:
-    """Função auxiliar para executar as fórmulas de cálculo de dimensão/peso."""
     if not formula: return 0.0
     stack = []
     for comp in formula:
@@ -50,9 +51,7 @@ def _executar_formula(formula: List[Dict[str, Any]], contexto: Dict[str, float])
         raise ValueError("Fórmula de embalagem mal formatada.")
 
 class IntelipostService:
-    """
-    Encapsula toda a lógica de comunicação com a API da Intelipost.
-    """
+    # ... (__init__ permanece o mesmo) ...
     def __init__(self, db: Session):
         self.db = db
         self.base_url = "https://api.intelipost.com.br/api/v1"
@@ -77,18 +76,17 @@ class IntelipostService:
         
         self.client = httpx.AsyncClient(base_url=self.base_url, headers=self.headers, timeout=20.0)
 
+    # ... (métodos de cotação e cálculo de volumes permanecem os mesmos) ...
     def _get_orcamento_data(self, orcamento_id: int) -> Dict[str, Any]:
         """Busca os dados de um orçamento e o CEP do cliente associado."""
         conn = pool.get_connection()
         cursor = conn.cursor(dictionary=True)
         try:
-            # Busca o orçamento
             cursor.execute("SELECT * FROM orcamentos WHERE id = %s", (orcamento_id,))
             orcamento = cursor.fetchone()
             if not orcamento:
                 raise HTTPException(status_code=404, detail=f"Orçamento com ID {orcamento_id} não encontrado.")
 
-            # Busca o CEP do cliente do orçamento
             cursor.execute("SELECT cep FROM cadastros WHERE id = %s", (orcamento['cliente_id'],))
             cliente = cursor.fetchone()
             if not cliente or not cliente.get('cep'):
@@ -243,7 +241,6 @@ class IntelipostService:
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Erro inesperado no serviço Intelipost: {str(e)}")
 
-    # --- NOVO MÉTODO ADICIONADO ---
     async def get_quote_for_items(self, items: List[Dict], destination_zip_code: str) -> Dict[str, Any]:
         """
         Calcula volumes para uma lista de itens e um CEP, e retorna a cotação.
@@ -277,9 +274,77 @@ class IntelipostService:
         except Exception as e:
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Erro inesperado ao cotar itens: {str(e)}")
-    # --- FIM DO NOVO MÉTODO ---
 
-    async def get_shipment_status(self, order_number: str) -> Dict[str, Any]:
-        """Consulta o status de um pedido na Intelipost."""
-        print(f"Método get_shipment_status chamado para o pedido {order_number}, mas ainda não implementado.")
-        return {"message": "Funcionalidade de rastreamento a ser implementada."}
+    # --- NOVOS MÉTODOS PARA DESPACHO ---
+    async def create_shipment_order(self, erp_order_id: int) -> Dict[str, Any]:
+        """
+        Cria um pedido de envio na Intelipost com base em um pedido do ERP.
+        """
+        conn = pool.get_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            # 1. Buscar dados do pedido e do cliente
+            cursor.execute("SELECT p.*, c.nome_razao, c.fantasia, c.cpf_cnpj, c.email, c.telefone, c.cep, c.rua, c.numero, c.bairro, c.cidade, c.estado FROM pedidos p JOIN cadastros c ON p.cliente_id = c.id WHERE p.id = %s", (erp_order_id,))
+            pedido = cursor.fetchone()
+            if not pedido:
+                raise HTTPException(status_code=404, detail="Pedido do ERP não encontrado.")
+
+            # 2. Calcular os volumes
+            lista_itens = json.loads(pedido['lista_itens'])
+            tasks = [self._calculate_volumes_for_item(item['produto_id'], item['quantidade_itens']) for item in lista_itens]
+            results = await asyncio.gather(*tasks)
+            all_volumes = [volume for sublist in results for volume in sublist]
+            if not all_volumes:
+                raise HTTPException(status_code=400, detail="Não foi possível calcular os volumes para o despacho.")
+
+            # 3. Montar o payload para a Intelipost
+            payload = {
+                "order_number": str(pedido['id']),
+                "end_customer": {
+                    "first_name": pedido['nome_razao'].split()[0],
+                    "last_name": ' '.join(pedido['nome_razao'].split()[1:]) if ' ' in pedido['nome_razao'] else "N/A",
+                    "email": pedido['email'],
+                    "phone": pedido['telefone'],
+                    "cellphone": pedido['telefone'],
+                    "is_company": len(pedido['cpf_cnpj']) > 11,
+                    "federal_tax_payer_id": pedido['cpf_cnpj'],
+                    "shipping_address": pedido['rua'],
+                    "shipping_number": pedido['numero'],
+                    "shipping_quarter": pedido['bairro'],
+                    "shipping_city": pedido['cidade'],
+                    "shipping_state_code": pedido['estado'],
+                    "shipping_zip_code": pedido['cep'],
+                    "shipping_country": "BR"
+                },
+                "volumes": all_volumes,
+                "shipment_order_type": "ECOMMERCE",
+                "delivery_method_id": 4, # Exemplo: 4 para Correios PAC
+                "created": datetime.now().isoformat()
+            }
+
+            # 4. Enviar para a Intelipost
+            response = await self.client.post('/shipment_order', json=payload)
+            response.raise_for_status()
+            
+            # 5. Atualizar o pedido no ERP
+            intelipost_data = response.json()
+            intelipost_order_number = intelipost_data['content']['order_number']
+            intelipost_status = intelipost_data['content']['status']
+
+            cursor.execute("UPDATE pedidos SET intelipost_order_number = %s, intelipost_shipment_status = %s WHERE id = %s", (intelipost_order_number, intelipost_status, erp_order_id))
+            conn.commit()
+
+            return intelipost_data
+
+        finally:
+            cursor.close()
+            conn.close()
+
+    async def get_shipment_order_details(self, intelipost_order_number: str) -> Dict[str, Any]:
+        """Consulta os detalhes de um pedido de envio na Intelipost."""
+        try:
+            response = await self.client.get(f'/shipment_order/{intelipost_order_number}')
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=e.response.json())

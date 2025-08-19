@@ -1,7 +1,7 @@
 // /components/modals/ModalFaturarPedido.jsx
 
 import { useState, useEffect, useCallback } from 'react';
-import { X, FileText, FilePlus, AlertCircle, CheckCircle, Loader2, Send } from 'lucide-react';
+import { X, FileText, AlertCircle, CheckCircle, Loader2, Send } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 
@@ -10,7 +10,7 @@ import CampoTextsimples from '@/components/campos/CampoTextsimples';
 export default function ModalFaturarPedido({
     onClose,
     onConfirmarFaturamento,
-    onNfeProcessando, // Novo callback para indicar que a NF-e foi enviada
+    onNfeProcessando, // Callback para indicar que a NF-e foi enviada
     pedidoSelecionado,
     API_URL
 }) {
@@ -35,8 +35,8 @@ export default function ModalFaturarPedido({
         setStatusEnvio('ENVIANDO');
         setMensagem('Enviando NF-e para processamento...');
         try {
-            // Usa o novo endpoint da API Webmania
-            const response = await axios.post(`${API_URL}/nfe-webmania/emitir`, { pedido_id: pedidoSelecionado.id });
+            // [ALTERAÇÃO 1] Aponta para o novo endpoint da Focus NF-e.
+            const response = await axios.post(`${API_URL}/nfe-focus/emitir`, { pedido_id: pedidoSelecionado.id });
             const data = response.data;
 
             if (data.status === 'PROCESSANDO') {
@@ -44,11 +44,12 @@ export default function ModalFaturarPedido({
                 setMensagem('NF-e enviada com sucesso! O status será atualizado em breve.');
                 toast.success('NF-e enviada para processamento!');
                 
-                // Notifica o componente pai para atualizar a UI
+                // [ALTERAÇÃO 2] Usa 'data.ref' em vez de 'data.uuid' para atualizar a UI.
+                // O backend da Focus NF-e retorna uma 'ref', que salvamos no campo 'nfe_uuid' do pedido.
                 onNfeProcessando?.({ 
                     pedido_id: pedidoSelecionado.id, 
                     nfe_status: 'PROCESSANDO', 
-                    nfe_uuid: data.uuid 
+                    nfe_uuid: data.ref 
                 });
                 
                 // Fecha o modal após um curto período
@@ -62,7 +63,7 @@ export default function ModalFaturarPedido({
         }
     };
 
-    // Efeito para configurar o estado inicial do Modal
+    // Efeito para configurar o estado inicial do Modal (nenhuma alteração aqui)
     useEffect(() => {
         if (pedidoSelecionado?.nfe_status === 'AUTORIZADO') {
             setStatusEnvio('SUCESSO');
@@ -93,7 +94,6 @@ export default function ModalFaturarPedido({
         return 'bg-blue-50 border-blue-200 text-blue-700';
     }
 
-    // O botão de confirmar faturamento agora só é relevante se a nota já estiver autorizada
     const podeConfirmarFaturamento = pedidoSelecionado?.nfe_status === 'AUTORIZADO';
 
     return (

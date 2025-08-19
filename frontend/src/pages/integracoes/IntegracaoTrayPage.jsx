@@ -6,6 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import ModalConfigAnuncioTray from '@/components/modals/tray/ModalConfigAnuncioTray';
 import CampoSenha from '@/components/campos/CampoSenha';
 import ButtonComPermissao from "@/components/buttons/ButtonComPermissao";
+import CampoTextsimples from '@/components/campos/CampoTextsimples'; // Importe o campo de texto
 
 const API_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -258,6 +259,9 @@ const AbaConfiguracoesTray = () => {
     const [form, setForm] = useState({
         tray_consumer_key: '',
         tray_consumer_secret: '',
+        // Adiciona os novos campos ao estado inicial
+        store_name: '',
+        store_email: '',
         aceite_automatico_pedidos: false,
         vendedor_padrao_id: '',
         situacao_pedido_inicial: ''
@@ -302,6 +306,7 @@ const AbaConfiguracoesTray = () => {
     return (
         <div>
             <form id="form-config-tray" onSubmit={handleSave} className="space-y-8">
+                {/* Seção de Credenciais (continua a mesma) */}
                 <div className="p-6 bg-white border rounded-lg shadow-sm">
                     <h3 className="text-lg font-semibold mb-4 text-gray-800">Credenciais da Aplicação</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -321,6 +326,29 @@ const AbaConfiguracoesTray = () => {
                         />
                     </div>
                 </div>
+
+                {/* --- NOVA SEÇÃO PARA INFORMAÇÕES DA LOJA --- */}
+                <div className="p-6 bg-white border rounded-lg shadow-sm">
+                    <h3 className="text-lg font-semibold mb-4 text-gray-800">Informações da Loja</h3>
+                    <p className="text-sm text-gray-500 mb-4">Estes dados serão exibidos na tela de "Visão Geral" da integração.</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <CampoTextsimples
+                            label="Nome da Loja"
+                            name="store_name"
+                            value={form.store_name || ''}
+                            onChange={handleChange}
+                            placeholder="Ex: Minha Loja de Calçados"
+                        />
+                        <CampoTextsimples
+                            label="E-mail de Contato da Loja"
+                            name="store_email"
+                            value={form.store_email || ''}
+                            onChange={handleChange}
+                            placeholder="Ex: contato@minhaloja.com"
+                        />
+                    </div>
+                </div>
+
                 <div className="flex justify-end gap-4 mt-6">
                     <ButtonComPermissao
                         permissoes={["admin"]}

@@ -2,19 +2,31 @@
 import { useState } from 'react';
 import { FaPlus, FaTimes } from 'react-icons/fa';
 
-// Constantes para manter o código limpo
+// Constantes com a NOVA estrutura de variáveis que você definiu
 const VARIAVEIS_DISPONIVEIS = [
+    // --- Variáveis de Quantidade ---
     { valor: 'QTD_RESTANTE', nome: 'Qtd. Restante' },
-    { valor: 'QTD_POR_EMBALAGEM', nome: 'Qtd. por Embalagem' },
+    { valor: 'QTD_EMBALAGEM', nome: 'Qtd. por Embalagem' },
+    
+    // --- Variáveis da Embalagem (Dados de Origem) ---
+    { valor: 'PESO_EMBALAGEM', nome: 'Peso Embalagem' },
+    { valor: 'ALTURA_EMBALAGEM', nome: 'Altura Embalagem' },
+    { valor: 'LARGURA_EMBALAGEM', nome: 'Largura Embalagem' },
+    { valor: 'COMPRIMENTO_EMBALAGEM', nome: 'Comprimento Embalagem' },
+
+    // --- Variáveis Calculadas (Proporcionais) ---
     { valor: 'PESO_PROPORCIONAL', nome: 'Peso Proporcional' },
-    { valor: 'ALTURA_BASE', nome: 'Altura Base' },
-    { valor: 'LARGURA_BASE', nome: 'Largura Base' },
-    { valor: 'COMPRIMENTO_BASE', nome: 'Comprimento Base' },
+    { valor: 'ALTURA_PROPORCIONAL', nome: 'Altura Proporcional' },
+    { valor: 'LARGURA_PROPORCIONAL', nome: 'Largura Proporcional' },
+    { valor: 'COMPRIMENTO_PROPORCIONAL', nome: 'Comprimento Proporcional' },
+
+    // --- Variáveis da Embalagem ---
+    { valor: 'ACRESCIMO_EMBALAGEM', nome: 'Acréscimo Fixo (Embalagem)' },
 ];
 
 const OPERADORES_DISPONIVEIS = ['+', '-', '*', '/'];
 
-// Componente para construir uma única fórmula
+// Componente para construir uma única fórmula (Nenhuma outra alteração necessária aqui)
 export default function ConstrutorFormula({ label, formula, onChange }) {
     const [mostraSeletor, setMostraSeletor] = useState(false);
 
@@ -64,7 +76,7 @@ export default function ConstrutorFormula({ label, formula, onChange }) {
                     <div>
                         <label className="text-xs font-bold">Operador</label>
                         <select onChange={(e) => adicionarComponente('operador', e.target.value)} className="w-full p-1 border rounded mt-1">
-                             <option value="">Selecione...</option>
+                                <option value="">Selecione...</option>
                             {OPERADORES_DISPONIVEIS.map(op => <option key={op} value={op}>{op}</option>)}
                         </select>
                     </div>
@@ -74,7 +86,7 @@ export default function ConstrutorFormula({ label, formula, onChange }) {
                          onKeyDown={(e) => e.key === 'Enter' && adicionarComponente('numero', e.target.value)}
                          className="w-full p-1 border rounded mt-1" placeholder="Ex: 2.5"/>
                     </div>
-                     <button type="button" onClick={() => setMostraSeletor(false)} className="text-sm text-red-600 sm:col-span-3 text-right">Fechar</button>
+                    <button type="button" onClick={() => setMostraSeletor(false)} className="text-sm text-red-600 sm:col-span-3 text-right">Fechar</button>
                 </div>
             )}
         </div>

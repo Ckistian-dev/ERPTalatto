@@ -1,20 +1,297 @@
 import React, { useState, useEffect } from "react";
 import { toast } from "react-toastify";
 import axios from "axios";
-import { FaPlug, FaUnlink, FaCog, FaCalculator, FaTruck, FaMapMarkerAlt, FaSave, FaBoxOpen } from 'react-icons/fa';
+import { FaPlug, FaUnlink, FaCog, FaCalculator, FaTruck, FaMapMarkerAlt, FaSave, FaBoxOpen, FaShippingFast, FaEye, FaTimes } from 'react-icons/fa';
 
-// Componentes do seu projeto
 import CampoImportarOrcamento from "@/components/campos/CampoImportarOrcamento";
 import ButtonComPermissao from "@/components/buttons/ButtonComPermissao";
 import CampoTextsimples from "@/components/campos/CampoTextsimples";
-import CampoSenha from '@/components/campos/CampoSenha';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL;
 
-// --- Componente para a Aba de Cotação ---
+// --- MODAL DE DETALHES DO PEDIDO ---
+const ModalDetalhesPedido = ({ isOpen, onClose, pedidoData }) => {
+    if (!isOpen || !pedidoData) return null;
+
+    const { content: pedido } = pedidoData;
+    const history = pedido.shipment_order_volume_state_history || [];
+
+    const formatarData = (dataString) => new Date(dataString).toLocaleString('pt-BR');
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col border">
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-2xl font-bold text-gray-800">Detalhes do Envio #{pedido.order_number}</h2>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-800"><FaTimes size={20} /></button>
+                </div>
+                <div className="flex-grow overflow-y-auto pr-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="p-4 border rounded-lg bg-gray-50">
+                            <h3 className="font-bold text-lg mb-2">Status Atual</h3>
+                            <p className="text-2xl font-semibold text-teal-600">{pedido.status_description}</p>
+                            <p className="text-sm text-gray-500">Última atualização: {formatarData(pedido.updated)}</p>
+                        </div>
+                        <div className="p-4 border rounded-lg bg-gray-50">
+                            <h3 className="font-bold text-lg mb-2">Rastreamento</h3>
+                            <p><strong>Código:</strong> {pedido.tracking_code || 'Aguardando'}</p>
+                            {pedido.tracking_url && <a href={pedido.tracking_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Link de Rastreio</a>}
+                        </div>
+                    </div>
+                    <div className="mt-6">
+                        <h3 className="font-bold text-lg mb-2">Histórico de Status</h3>
+                        <ul className="border rounded-lg p-2 bg-gray-50">
+                            {history.map(evento => (
+                                <li key={evento.id} className="p-2 border-b">
+                                    <p><strong>{evento.shipment_order_volume_state_localized}</strong></p>
+                                    <p className="text-sm text-gray-600">{formatarData(evento.created_iso)} - {evento.provider_message}</p>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- ABA DE DESPACHO ---
+const AbaDespacho = () => {
+    const [pedidos, setPedidos] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [paginaAtual, setPaginaAtual] = useState(1);
+    const [totalPaginas, setTotalPaginas] = useState(1);
+    const [despachandoId, setDespachandoId] = useState(null);
+    const [modalAberto, setModalAberto] = useState(false);
+    const [pedidoSelecionado, setPedidoSelecionado] = useState(null);
+
+    const itensPorPagina = 15;
+
+    const buscarPedidos = async () => {
+        setLoading(true);
+        try {
+            const params = {
+                page: paginaAtual, limit: itensPorPagina,
+                filtros: "situacao_pedido:Aguardando Envio;situacao_pedido:Faturado"
+            };
+            const { data } = await axios.get(`${API_URL}/pedidos/paginado`, { params });
+            setPedidos(data.resultados);
+            setTotalPaginas(Math.ceil(data.total / itensPorPagina));
+        } catch (error) {
+            toast.error(error.response?.data?.detail || "Erro ao buscar pedidos.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        buscarPedidos();
+    }, [paginaAtual]);
+
+    const handleDespachar = async (pedidoId) => {
+        setDespachandoId(pedidoId);
+        try {
+            await axios.post(`${API_URL}/intelipost/pedidos/${pedidoId}/despachar`);
+            toast.success(`Pedido #${pedidoId} enviado para a Intelipost com sucesso!`);
+            buscarPedidos();
+        } catch (error) {
+            toast.error(error.response?.data?.detail || `Erro ao despachar pedido #${pedidoId}.`);
+        } finally {
+            setDespachandoId(null);
+        }
+    };
+
+    const handleAbrirDetalhes = async (pedido) => {
+        setLoading(true);
+        try {
+            const { data } = await axios.get(`${API_URL}/intelipost/pedidos/${pedido.intelipost_order_number}/status`);
+            setPedidoSelecionado(data);
+            setModalAberto(true);
+        } catch (error) {
+            toast.error("Erro ao buscar detalhes do pedido na Intelipost.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div>
+            <div className="flex justify-between items-center mb-4 p-4 bg-gray-50 rounded-lg">
+                <p className="text-gray-600">Envie seus pedidos faturados para a Intelipost para gerar o envio.</p>
+            </div>
+            <div className="overflow-x-auto">
+                <table className="bg-white border border-gray-300 table-auto whitespace-nowrap w-full">
+                    <thead className="bg-gray-100">
+                        <tr>
+                            <th className="p-2 border text-left">Pedido ERP</th>
+                            <th className="p-2 border text-left">Cliente</th>
+                            <th className="p-2 border text-center">Status ERP</th>
+                            <th className="p-2 border text-center">Status Intelipost</th>
+                            <th className="p-2 border text-center">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {loading ? (
+                            <tr><td colSpan="5" className="text-center p-4">Carregando pedidos...</td></tr>
+                        ) : pedidos.length === 0 ? (
+                            <tr><td colSpan="5" className="text-center p-4">Nenhum pedido aguardando despacho foi encontrado.</td></tr>
+                        ) : (
+                            pedidos.map(pedido => (
+                                <tr key={pedido.id} className={`hover:bg-gray-50 ${pedido.intelipost_order_number ? 'bg-green-50' : ''}`}>
+                                    <td className="p-2 border font-mono">#{pedido.id}</td>
+                                    <td className="p-2 border">{pedido.cliente_nome}</td>
+                                    <td className="p-2 border text-center">
+                                        <span className="px-2 py-1 text-xs font-semibold text-blue-800 bg-blue-100 rounded-full">
+                                            {pedido.situacao_pedido}
+                                        </span>
+                                    </td>
+                                    <td className="p-2 border text-center">
+                                        {pedido.intelipost_shipment_status ? (
+                                            <span className="px-2 py-1 text-xs font-semibold text-green-800 bg-green-200 rounded-full">
+                                                {pedido.intelipost_shipment_status}
+                                            </span>
+                                        ) : (
+                                            <span className="px-2 py-1 text-xs font-semibold text-gray-800 bg-gray-200 rounded-full">
+                                                Não Enviado
+                                            </span>
+                                        )}
+                                    </td>
+                                    <td className="p-2 border text-center">
+                                        {pedido.intelipost_order_number ? (
+                                            <button onClick={() => handleAbrirDetalhes(pedido)} title="Ver Detalhes do Envio" className="text-blue-600 hover:text-blue-800"><FaEye /></button>
+                                        ) : (
+                                            <button onClick={() => handleDespachar(pedido.id)} disabled={despachandoId === pedido.id} title="Despachar Pedido" className="text-green-600 hover:text-green-800 disabled:text-gray-400">
+                                                {despachandoId === pedido.id ? (
+                                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-900 mx-auto"></div>
+                                                ) : <FaShippingFast />}
+                                            </button>
+                                        )}
+                                    </td>
+                                </tr>
+                            ))
+                        )}
+                    </tbody>
+                </table>
+            </div>
+            <ModalDetalhesPedido isOpen={modalAberto} onClose={() => setModalAberto(false)} pedidoData={pedidoSelecionado} />
+        </div>
+    );
+};
+
+// --- Componente Principal da Página ---
+export default function IntegracaoIntelipostPage() {
+    // ... (lógica existente sem alterações)
+    const [abaAtual, setAbaAtual] = useState("visao_geral");
+    const [statusInfo, setStatusInfo] = useState({ status: 'carregando' });
+
+    const abas = [
+        { id: "visao_geral", label: "Visão Geral", icon: FaPlug },
+        { id: "cotacao", label: "Cotação", icon: FaCalculator },
+        { id: "despacho", label: "Despacho", icon: FaBoxOpen },
+        { id: "configuracoes", label: "Configurações", icon: FaCog },
+    ];
+
+    // ... (funções fetchStatus, renderAbaVisaoGeral, etc. sem alterações)
+    const fetchStatus = async () => {
+        setStatusInfo({ status: 'carregando' });
+        try {
+            const { data } = await axios.get(`${API_URL}/intelipost/configuracoes`);
+            if (data.api_key && data.origin_zip_code) {
+                setStatusInfo({ status: 'conectado', ...data });
+            } else {
+                setStatusInfo({ status: 'desconectado' });
+            }
+        } catch (error) {
+            toast.error("Não foi possível verificar o status da integração.");
+            setStatusInfo({ status: 'erro_conexao', detail: error.response?.data?.detail || "Erro de rede" });
+        }
+    };
+
+    useEffect(() => {
+        if (abaAtual === 'visao_geral') {
+            fetchStatus();
+        }
+    }, [abaAtual]);
+
+    useEffect(() => {
+        fetchStatus();
+    }, []);
+
+    const renderAbaVisaoGeral = () => {
+        switch (statusInfo.status) {
+            case 'carregando':
+                return <p className="text-center py-10">Verificando status da conexão...</p>;
+            case 'desconectado':
+                return (
+                    <div className="text-center p-8 border-2 border-dashed rounded-lg">
+                        <FaUnlink className="mx-auto text-5xl text-gray-400 mb-4" />
+                        <h2 className="text-2xl font-semibold mb-2">Integração Desconectada</h2>
+                        <p className="text-gray-600 mb-6">Vá para a aba 'Configurações' para inserir sua API Key e ativar a integração.</p>
+                        <button onClick={() => setAbaAtual('configuracoes')} className="px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-semibold">
+                            Ir para Configurações
+                        </button>
+                    </div>
+                );
+            case 'conectado':
+                return (
+                    <div className="text-center p-8 border-2 border-dashed rounded-lg border-green-400 bg-green-50">
+                        <FaPlug className="mx-auto text-5xl text-green-500 mb-4" />
+                        <h2 className="text-2xl font-semibold mb-2 text-green-800">Integração Ativa!</h2>
+                        <p className="text-gray-700">O sistema está pronto para realizar cotações.</p>
+                        <p className="text-gray-600 text-sm mb-6 flex items-center justify-center gap-2">
+                           <FaMapMarkerAlt /> CEP de Origem Padrão: <strong>{statusInfo.origin_zip_code}</strong>
+                        </p>
+                        <button onClick={() => setAbaAtual('cotacao')} className="px-6 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold text-sm">
+                            Fazer uma cotação
+                        </button>
+                    </div>
+                );
+            default:
+                return (
+                    <div className="text-center p-8 border-2 border-dashed rounded-lg border-red-400 bg-red-50">
+                        <FaUnlink className="mx-auto text-5xl text-red-500 mb-4" />
+                        <h2 className="text-2xl font-semibold mb-2 text-red-800">Erro na Conexão</h2>
+                        <p className="text-gray-700 mb-6">Não foi possível conectar com o backend.</p>
+                        <p className="font-mono bg-red-100 text-red-800 p-2 rounded text-sm mb-6">{JSON.stringify(statusInfo.detail)}</p>
+                    </div>
+                );
+        }
+    };
+
+    const renderAbaAtual = () => {
+        const isConnected = statusInfo.status === 'conectado';
+        switch (abaAtual) {
+            case "visao_geral": return renderAbaVisaoGeral();
+            case "cotacao": return <AbaCotacao isConnected={isConnected} />;
+            case "despacho": return <AbaDespacho />;
+            case "configuracoes": return <AbaConfiguracoes onConfigUpdate={fetchStatus} />;
+            default: return null;
+        }
+    };
+
+    return (
+        <div className="max-w-7xl mx-auto p-6 pb-28">
+            <h1 className="text-3xl font-bold mb-6">Gestão de Fretes Intelipost</h1>
+            <div className="flex gap-1 border-b mb-6 overflow-x-auto whitespace-nowrap">
+                {abas.map((aba) => (
+                    <button
+                        key={aba.id}
+                        onClick={() => setAbaAtual(aba.id)}
+                        className={`px-4 py-2 font-medium rounded-t-md transition-all duration-200 flex items-center gap-2 ${abaAtual === aba.id ? "bg-teal-600 text-white shadow-sm" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+                    >
+                        <aba.icon /> {aba.label}
+                    </button>
+                ))}
+            </div>
+            <div>{renderAbaAtual()}</div>
+        </div>
+    );
+}
+
+// --- Componentes AbaCotacao e AbaConfiguracoes (sem alterações) ---
 const AbaCotacao = ({ isConnected }) => {
     const [orcamentoId, setOrcamentoId] = useState(null);
-    const [resultado, setResultado] = useState(null); // Agora vai armazenar { volumes: [], cotacao: {} }
+    const [resultado, setResultado] = useState(null);
     const [loading, setLoading] = useState(false);
     const [freteSelecionado, setFreteSelecionado] = useState(null);
     const [salvando, setSalvando] = useState(false);
@@ -46,7 +323,6 @@ const AbaCotacao = ({ isConnected }) => {
                 params: { orcamento_id: orcamentoId }
             });
             
-            // Armazena o objeto completo retornado pelo backend
             if (response.data && response.data.cotacao && response.data.volumes) {
                  setResultado(response.data);
                  toast.success("Cotação realizada com sucesso!");
@@ -119,10 +395,8 @@ const AbaCotacao = ({ isConnected }) => {
                 </div>
             </form>
 
-            {/* --- INÍCIO DO NOVO LAYOUT DE RESULTADOS --- */}
             {resultado && (
                 <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* Coluna da Esquerda: Volumes Calculados */}
                     <div className="p-4 border rounded-lg bg-white shadow-sm">
                         <h2 className="text-xl font-bold mb-4 text-gray-700">Volumes Calculados ({resultado.volumes.length})</h2>
                         <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
@@ -142,7 +416,6 @@ const AbaCotacao = ({ isConnected }) => {
                         </div>
                     </div>
 
-                    {/* Coluna da Direita: Opções de Frete */}
                     <div className="p-4 border rounded-lg bg-white shadow-sm">
                         <div className="flex justify-between items-center mb-4">
                             <h2 className="text-xl font-bold text-gray-700">Opções de Frete</h2>
@@ -196,12 +469,9 @@ const AbaCotacao = ({ isConnected }) => {
                     </div>
                 </div>
             )}
-            {/* --- FIM DO NOVO LAYOUT DE RESULTADOS --- */}
         </div>
     );
 };
-
-// --- Componente de Configurações (sem alterações) ---
 const AbaConfiguracoes = ({ onConfigUpdate }) => {
     const [form, setForm] = useState({ api_key: '', origin_zip_code: '' });
     const [loading, setLoading] = useState(true);
@@ -258,7 +528,7 @@ const AbaConfiguracoes = ({ onConfigUpdate }) => {
                 <div className="p-6 bg-white border rounded-lg shadow-sm">
                     <h3 className="text-lg font-semibold mb-4 text-gray-800">Credenciais</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <CampoSenha
+                        <CampoTextsimples
                             label="API Key" name="api_key" value={form.api_key || ''}
                             onChange={handleChange} placeholder="Sua chave de API" type="password" required
                         />
@@ -280,109 +550,3 @@ const AbaConfiguracoes = ({ onConfigUpdate }) => {
         </div>
     );
 };
-
-// --- Componente Principal da Página (sem alterações na lógica principal) ---
-export default function IntegracaoIntelipostPage() {
-    const [abaAtual, setAbaAtual] = useState("visao_geral");
-    const [statusInfo, setStatusInfo] = useState({ status: 'carregando' });
-
-    const abas = [
-        { id: "visao_geral", label: "Visão Geral", icon: FaPlug },
-        { id: "cotacao", label: "Cotação", icon: FaCalculator },
-        { id: "configuracoes", label: "Configurações", icon: FaCog },
-    ];
-
-    const fetchStatus = async () => {
-        setStatusInfo({ status: 'carregando' });
-        try {
-            const { data } = await axios.get(`${API_URL}/intelipost/configuracoes`);
-            if (data.api_key && data.origin_zip_code) {
-                setStatusInfo({ status: 'conectado', ...data });
-            } else {
-                setStatusInfo({ status: 'desconectado' });
-            }
-        } catch (error) {
-            toast.error("Não foi possível verificar o status da integração.");
-            setStatusInfo({ status: 'erro_conexao', detail: error.response?.data?.detail || "Erro de rede" });
-        }
-    };
-
-    useEffect(() => {
-        if (abaAtual === 'visao_geral') {
-            fetchStatus();
-        }
-    }, [abaAtual]);
-
-    useEffect(() => {
-        fetchStatus();
-    }, []);
-
-    const renderAbaVisaoGeral = () => {
-        switch (statusInfo.status) {
-            case 'carregando':
-                return <p className="text-center py-10">Verificando status da conexão...</p>;
-            case 'desconectado':
-                return (
-                    <div className="text-center p-8 border-2 border-dashed rounded-lg">
-                        <FaUnlink className="mx-auto text-5xl text-gray-400 mb-4" />
-                        <h2 className="text-2xl font-semibold mb-2">Integração Desconectada</h2>
-                        <p className="text-gray-600 mb-6">Vá para a aba 'Configurações' para inserir sua API Key e ativar a integração.</p>
-                        <button onClick={() => setAbaAtual('configuracoes')} className="px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-semibold">
-                            Ir para Configurações
-                        </button>
-                    </div>
-                );
-            case 'conectado':
-                return (
-                    <div className="text-center p-8 border-2 border-dashed rounded-lg border-green-400 bg-green-50">
-                        <FaPlug className="mx-auto text-5xl text-green-500 mb-4" />
-                        <h2 className="text-2xl font-semibold mb-2 text-green-800">Integração Ativa!</h2>
-                        <p className="text-gray-700">O sistema está pronto para realizar cotações.</p>
-                        <p className="text-gray-600 text-sm mb-6 flex items-center justify-center gap-2">
-                           <FaMapMarkerAlt /> CEP de Origem Padrão: <strong>{statusInfo.origin_zip_code}</strong>
-                        </p>
-                        <button onClick={() => setAbaAtual('cotacao')} className="px-6 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold text-sm">
-                            Fazer uma cotação
-                        </button>
-                    </div>
-                );
-            default:
-                return (
-                    <div className="text-center p-8 border-2 border-dashed rounded-lg border-red-400 bg-red-50">
-                        <FaUnlink className="mx-auto text-5xl text-red-500 mb-4" />
-                        <h2 className="text-2xl font-semibold mb-2 text-red-800">Erro na Conexão</h2>
-                        <p className="text-gray-700 mb-6">Não foi possível conectar com o backend.</p>
-                        <p className="font-mono bg-red-100 text-red-800 p-2 rounded text-sm mb-6">{JSON.stringify(statusInfo.detail)}</p>
-                    </div>
-                );
-        }
-    };
-
-    const renderAbaAtual = () => {
-        const isConnected = statusInfo.status === 'conectado';
-        switch (abaAtual) {
-            case "visao_geral": return renderAbaVisaoGeral();
-            case "cotacao": return <AbaCotacao isConnected={isConnected} />;
-            case "configuracoes": return <AbaConfiguracoes onConfigUpdate={fetchStatus} />;
-            default: return null;
-        }
-    };
-
-    return (
-        <div className="max-w-7xl mx-auto p-6 pb-28">
-            <h1 className="text-3xl font-bold mb-6">Gestão de Fretes Intelipost</h1>
-            <div className="flex gap-1 border-b mb-6 overflow-x-auto whitespace-nowrap">
-                {abas.map((aba) => (
-                    <button
-                        key={aba.id}
-                        onClick={() => setAbaAtual(aba.id)}
-                        className={`px-4 py-2 font-medium rounded-t-md transition-all duration-200 flex items-center gap-2 ${abaAtual === aba.id ? "bg-teal-600 text-white shadow-sm" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
-                    >
-                        <aba.icon /> {aba.label}
-                    </button>
-                ))}
-            </div>
-            <div>{renderAbaAtual()}</div>
-        </div>
-    );
-}

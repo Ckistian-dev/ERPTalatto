@@ -5,7 +5,7 @@ import httpx
 import traceback
 import mysql.connector.pooling
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Request, BackgroundTasks
-from fastapi.responses import JSONResponse, HTMLResponse # Adicionada a importação de HTMLResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from typing import Optional, List, Dict, Any
@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 
 # Importações do projeto
 from config.database import get_db
-from models.tray_model import TrayCredentials, TrayConfiguracao, TrayConfiguracaoSchema, TrayAuthSuccessResponse
+from models.tray_model import TrayCredentials, TrayConfiguracao, TrayConfiguracaoSchema
 from services.tray_service import TrayAPIService
 
 # ==================================
@@ -48,7 +48,7 @@ class EnvioPedidoPayload(BaseModel):
     url_rastreio: Optional[str] = None
     
 # ==================================
-#     ENDPOINTS DE AUTENTICAÇÃO E STATUS
+#   ENDPOINTS DE AUTENTICAÇÃO E STATUS
 # ==================================
 
 @router.get("/tray", summary="Página de Início da Autorização Tray", response_class=HTMLResponse)
@@ -57,11 +57,6 @@ async def start_tray_auth_page(
     url: str = Query(..., alias="url"), # O domínio da loja vindo da Tray
     db: Session = Depends(get_db)
 ):
-    """
-    Esta é a página de aterrissagem para onde o lojista é redirecionado
-    após instalar o aplicativo na Tray. Ela apresenta um botão para
-    iniciar o fluxo de autorização OAuth.
-    """
     config = db.query(TrayConfiguracao).filter(TrayConfiguracao.id == 1).first()
     if not config or not config.tray_consumer_key:
         raise HTTPException(
@@ -69,14 +64,9 @@ async def start_tray_auth_page(
             detail="Consumer Key da aplicação Tray não configurado no sistema."
         )
 
-    # A URL de callback da nossa API que a Tray deve chamar após a autorização.
-    # É crucial que esta URL esteja registrada no seu painel de parceiro Tray.
     callback_url = str(request.url_for('tray_auth_callback'))
-
-    # Constrói a URL de autorização para a qual o lojista será redirecionado
     auth_url = f"{url}/auth.php?response_type=code&consumer_key={config.tray_consumer_key}&callback={callback_url}"
 
-    # Retorna uma página HTML simples com o botão para autorizar
     html_content = f"""
     <!DOCTYPE html>
     <html lang="pt-BR">
@@ -108,22 +98,20 @@ async def start_tray_auth_page(
 @router.get("/tray/status", summary="Verifica o status da conexão com a Tray")
 async def get_integration_status(db: Session = Depends(get_db)):
     """
-    Verifica o status da integração lendo os dados salvos localmente.
-    É mais rápido e mais confiável do que fazer uma chamada de API a cada vez.
+    Verifica o status lendo os dados salvos localmente para máxima performance.
     """
     credentials = db.query(TrayCredentials).first()
+    config = db.query(TrayConfiguracao).filter(TrayConfiguracao.id == 1).first()
     
     if not credentials:
         return {"status": "desconectado"}
 
-    # O token é validado e renovado automaticamente quando uma chamada REAL é feita (ex: buscar anúncios).
-    # Para o status, apenas precisamos confirmar que as credenciais existem.
+    # Busca o nome e e-mail da tabela de configurações (config)
     return {
         "status": "conectado",
         "store_id": credentials.store_id,
-        "store_name": credentials.store_name,
-        "store_email": credentials.store_email
-        # O store_url pode ser removido, pois não o salvamos
+        "store_name": config.store_name if config and config.store_name else "Não informado",
+        "store_email": config.store_email if config and config.store_email else "Não informado"
     }
 
 @router.get("/tray/callback", summary="Callback de Autenticação da Tray")
@@ -133,9 +121,8 @@ async def tray_auth_callback(
     db: Session = Depends(get_db)
 ):
     """
-    Endpoint de callback. Troca o 'code' por um 'access_token',
-    tenta buscar os dados da loja e salva tudo no banco de dados.
-    Este endpoint é resiliente a falhas no GET /informations da Tray.
+    Endpoint de callback simplificado. Apenas troca o 'code' por um 'access_token'
+    e salva as credenciais. As informações da loja são inseridas pelo usuário.
     """
     config = db.query(TrayConfiguracao).filter(TrayConfiguracao.id == 1).first()
     if not config or not config.tray_consumer_key or not config.tray_consumer_secret:
@@ -151,7 +138,6 @@ async def tray_auth_callback(
     }
     
     try:
-        # Passo 1: Trocar o 'code' pelo 'access_token' (Parte Crítica)
         async with httpx.AsyncClient(base_url=api_address) as client:
             auth_response = await client.post("/auth", data=payload)
             auth_response.raise_for_status()
@@ -164,41 +150,17 @@ async def tray_auth_callback(
             )
         
         store_id = int(token_data['store_id'])
-        store_info = {} # Inicia com um dicionário vazio
 
-        # ===================================================================
-        # LÓGICA DE CONTORNO (BLINDAGEM)
-        # Tentamos buscar os dados da loja, mas se a API falhar,
-        # nós ignoramos o erro e continuamos, pois esta não é uma etapa crítica.
-        # ===================================================================
-        try:
-            print(f"Tentando buscar informações para a loja {store_id}...")
-            info_params = {"access_token": token_data['access_token']}
-            async with httpx.AsyncClient(base_url=api_address) as client:
-                info_response = await client.get("/informations", params=info_params)
-                info_response.raise_for_status()
-                store_info_data = info_response.json()
-            store_info = store_info_data.get("Informations", {})
-            print("Informações da loja obtidas com sucesso.")
-        except httpx.HTTPStatusError as e:
-            # Se a chamada falhar, apenas registramos um aviso e seguimos em frente
-            print(f"AVISO: A chamada para /informations falhou, mas a autenticação continuará. Erro: {e.response.text}")
-            
-        # Passo 3: Salvar tudo no banco de dados
         db_credentials = db.query(TrayCredentials).filter(TrayCredentials.store_id == store_id).first()
         
         if db_credentials:
-            # Atualiza um registro existente
             db_credentials.access_token = token_data['access_token']
             db_credentials.refresh_token = token_data['refresh_token']
             db_credentials.api_address = api_address
             db_credentials.date_expiration_access_token = token_data['date_expiration_access_token']
             db_credentials.date_expiration_refresh_token = token_data['date_expiration_refresh_token']
             db_credentials.date_activated = token_data['date_activated']
-            db_credentials.store_name = store_info.get("name") # Salva o nome se existir, senão None
-            db_credentials.store_email = store_info.get("email") # Salva o e-mail se existir, senão None
         else:
-            # Cria um novo registro
             new_credentials = TrayCredentials(
                 store_id=store_id,
                 api_address=api_address,
@@ -206,9 +168,7 @@ async def tray_auth_callback(
                 refresh_token=token_data['refresh_token'],
                 date_expiration_access_token=token_data['date_expiration_access_token'],
                 date_expiration_refresh_token=token_data['date_expiration_refresh_token'],
-                date_activated=token_data['date_activated'],
-                store_name=store_info.get("name"),
-                store_email=store_info.get("email")
+                date_activated=token_data['date_activated']
             )
             db.add(new_credentials)
         
@@ -217,7 +177,6 @@ async def tray_auth_callback(
         return JSONResponse(content={"message": f"Loja {store_id} conectada com sucesso!"})
 
     except httpx.HTTPStatusError as e:
-        print("Erro CRÍTICO na resposta da Tray (callback /auth):", e.response.text)
         raise HTTPException(
             status_code=e.response.status_code, 
             detail=f"Erro de comunicação durante o callback da Tray: {e.response.text}"
@@ -229,9 +188,9 @@ async def tray_auth_callback(
             status_code=500, 
             detail=f"Ocorreu um erro interno no servidor durante o callback: {str(e)}"
         )
-
+        
 # ==================================
-#     ENDPOINTS DE PRODUTOS/ANÚNCIOS
+#   ENDPOINTS DE PRODUTOS/ANÚNCIOS
 # ==================================
 @router.get("/tray/anuncios", summary="Lista produtos do ERP e seu status na Tray")
 async def get_combined_listings(
@@ -244,7 +203,6 @@ async def get_combined_listings(
     if not credentials:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integração Tray não está ativa.")
     
-    # 1. Busca a página atual de produtos do ERP (operação rápida no seu banco)
     conn = pool.get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -267,20 +225,17 @@ async def get_combined_listings(
         cursor.close()
         conn.close()
 
-    # 2. Extrai os SKUs APENAS da página atual do ERP
     skus_on_page = [p["sku"] for p in erp_products if p.get("sku")]
     
     tray_items_by_sku = {}
     if skus_on_page:
         try:
-            # 3. Busca na Tray os dados APENAS para os SKUs da página atual (operação rápida na API)
             tray_service = TrayAPIService(store_id=credentials.store_id, db=db)
             tray_items_by_sku = await tray_service.get_products_by_specific_skus(skus=skus_on_page)
         except HTTPException as e:
             print(f"Aviso: Falha ao buscar produtos da Tray. Exibindo apenas dados do ERP. Erro: {e.detail}")
             tray_items_by_sku = {}
 
-    # 4. Combina os resultados (lógica original, agora muito mais rápida)
     resultados_combinados = []
     for erp_product in erp_products:
         sku = erp_product.get("sku")
@@ -333,7 +288,7 @@ async def publish_listing(payload: AnuncioTrayPayload, db: Session = Depends(get
         raise HTTPException(status_code=500, detail=f"Erro inesperado ao salvar anúncio: {e}")
 
 # ==================================
-#     ENDPOINTS DE PEDIDOS
+#         ENDPOINTS DE PEDIDOS
 # ==================================
 @router.get("/tray/pedidos", summary="Lista os pedidos recentes da Tray")
 async def get_tray_orders(page: int = 1, limit: int = 15, db: Session = Depends(get_db)):
@@ -342,10 +297,10 @@ async def get_tray_orders(page: int = 1, limit: int = 15, db: Session = Depends(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integração Tray não está ativa.")
     
     tray_service = TrayAPIService(store_id=credentials.store_id, db=db)
-    offset = (page - 1) * limit
     
     try:
-        orders_data = await tray_service.get_recent_orders(limit=limit, offset=offset)
+        # A API da Tray usa 'page' diretamente, não 'offset'
+        orders_data = await tray_service.get_recent_orders(limit=limit, page=page)
         
         return {
             "total": orders_data.get("paging", {}).get("total", 0),
@@ -487,7 +442,7 @@ async def enviar_pedido_para_tray(
         raise HTTPException(status_code=500, detail=f"Erro inesperado ao enviar dados do pedido: {e}")
 
 # ==================================
-#     ENDPOINT DE CONFIGURAÇÕES
+#       ENDPOINT DE CONFIGURAÇÕES
 # ==================================
 @router.get("/configuracoes/tray", response_model=TrayConfiguracaoSchema, summary="Busca as configurações da integração Tray")
 def get_tray_configuracoes(db: Session = Depends(get_db)):
@@ -618,6 +573,9 @@ async def handle_tray_webhook(
 
     return {"message": "Notificação recebida com sucesso."}
 
+# ===================================================================
+# ENDPOINT PARA DESCONECTAR
+# ===================================================================
 @router.delete("/tray/credentials/{store_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Remove as credenciais de uma loja")
 def delete_tray_credentials(store_id: int, db: Session = Depends(get_db)):
     """

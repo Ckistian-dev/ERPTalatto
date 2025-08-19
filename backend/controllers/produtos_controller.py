@@ -1,5 +1,3 @@
-# controllers/produtos_controller.py
-
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from typing import Optional
@@ -23,7 +21,7 @@ pool = mysql.connector.pooling.MySQLConnectionPool(
 
 router = APIRouter()
 
-# --- Nenhuma alteração nas classes e rotas abaixo até "listar_tabela_precos" ---
+# --- Nenhuma alteração nas classes e rotas acima ---
 class ProdutoCreate(BaseModel):
     sku: str
     descricao: str
@@ -249,6 +247,7 @@ def importar_produtos_confirmado(payload: dict):
         cursor.close()
         conn.close()
 
+# [CORREÇÃO] A query agora retorna os campos fiscais necessários para a NF-e.
 @router.get("/produtos_dropdown")
 def listar_produtos_dropdown():
     conn = pool.get_connection()
@@ -261,7 +260,10 @@ def listar_produtos_dropdown():
                 id,
                 sku, 
                 descricao,
-                JSON_UNQUOTE(JSON_EXTRACT(url_imagem, '$[0]')) AS url_imagem
+                JSON_UNQUOTE(JSON_EXTRACT(url_imagem, '$[0]')) AS url_imagem,
+                classificacao_fiscal,
+                origem,
+                unidade
             FROM produtos
             WHERE situacao = 'Ativo'
             """
@@ -290,19 +292,13 @@ def listar_tabela_precos(produto_id: int):
             tabelas_precos = json.loads(resultado["tabela_precos"])
             response_data = []
             for nome, config in tabelas_precos.items():
-                # Lógica para compatibilidade com a estrutura antiga (valor numérico direto)
-                # e a nova estrutura (objeto com 'valor' e 'descontos').
                 if isinstance(config, dict):
-                    # Nova estrutura: {"Tabela": {"valor": 100, "descontos": {"10": 5}}}
-                    # Garante que as chaves essenciais existam
                     final_config = {
                         "valor": config.get("valor", 0),
                         "descontos": config.get("descontos", {})
                     }
                     response_data.append({"id": nome, "nome": nome, "config": final_config})
                 elif isinstance(config, (int, float, decimal.Decimal)):
-                    # Estrutura antiga: {"Tabela": 100}
-                    # Converte para a nova estrutura para consistência no frontend
                     response_data.append({
                         "id": nome,
                         "nome": nome,

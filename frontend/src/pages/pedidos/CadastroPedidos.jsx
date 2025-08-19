@@ -37,7 +37,7 @@ export default function CadastroPedido({ modo = "novo" }) {
         vendedor: '',
         vendedor_nome: '',
         origem_venda: '',
-        tipo_frete: '',
+        tipo_frete: 'Contratação do Frete por conta do Remente (CIF)',
         transportadora: '',
         transportadora_nome: '',
         valor_frete: 0,

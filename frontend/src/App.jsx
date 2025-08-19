@@ -36,7 +36,7 @@ import ListaUsuarios from "./pages/usuario/ListaUsuarios";
 import IntegracaoMercadoLivrePage from './pages/integracoes/IntegracaoMercadoLivrePage';
 import IntegracaoTrayPage from './pages/integracoes/IntegracaoTrayPage';
 import IntegracaoIntelipostPage from './pages/integracoes/IntegracaoIntelipostPage';
-import IntegracaoWebmaniaPage from "./pages/integracoes/IntegracaoWebmaniaPage";
+import IntegracaoFocusPage from "./pages/integracoes/IntegracaoFocusPage";
 
 function App() {
   return (
@@ -85,7 +85,7 @@ function App() {
             <Route path="/usuario/novo" element={<CadastroUsuario />} />
             <Route path="/usuario/editar" element={<CadastroUsuario modo="editar" />} />
             <Route path="/usuario" element={<ListaUsuarios />} />
-            <Route path="/integracoes/webmania" element={<IntegracaoWebmaniaPage />} />
+            <Route path="/integracoes/focus" element={<IntegracaoFocusPage />} />
             <Route path="/integracoes/mercadolivre" element={<IntegracaoMercadoLivrePage />} />
             <Route path="/integracoes/tray" element={<IntegracaoTrayPage />} />
             <Route path="/integracoes/intelipost" element={<IntegracaoIntelipostPage />} />

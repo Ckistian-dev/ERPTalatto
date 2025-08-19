@@ -27,16 +27,17 @@ from controllers import (
     contas_controller,
     dashboard_controller,
     estoque_controller,
-    empresa_controller,
     regras_controller,
     embalagem_controller,
     usuarios_controller,
-    nfe_webmania_controller,
     tray_controller,
-    intelipost_controller
+    intelipost_controller,
 )
 
-# --- Importação dos Controladores ---
+# [ALTERADO] Importa os dois routers do controlador consolidado
+from controllers.nfe_focus_controller import router_config, router_nfe
+
+# --- Importação dos Controladores (Mercado Livre) ---
 from controllers.mercadolivre import (
     mercadolivre_controller,
     mercadolivre_gerenciador_controller,
@@ -71,7 +72,6 @@ app.add_middleware(
 
 # --- Inclusão das Rotas dos Controladores ---
 app.include_router(auth_controller.router, prefix="/auth", tags=["auth"])
-app.include_router(empresa_controller.router)
 app.include_router(regras_controller.router, prefix="/api")
 app.include_router(usuarios_controller.router)
 app.include_router(embalagem_controller.router) 
@@ -82,9 +82,12 @@ app.include_router(produtos_controller.router)
 app.include_router(opcao_controller.router)
 app.include_router(orcamento_controller.router)
 app.include_router(pedidos_controller.router)
-app.include_router(nfe_webmania_controller.router)
 app.include_router(contas_controller.router)
 app.include_router(estoque_controller.router)
+
+# [ALTERADO] Inclui os dois routers da Focus NF-e e Configurações
+app.include_router(router_config) # Lida com /api/empresa
+app.include_router(router_nfe)   # Lida com /nfe-focus
 
 # --- Inclusão das Rotas dos Controladores (Mercado Livre) ---
 app.include_router(configuracoes_controller.router)

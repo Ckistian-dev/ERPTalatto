@@ -14,7 +14,7 @@ class InfoEmpresa(Base):
     """
     Modelo de dados para armazenar as informações e credenciais da empresa.
     """
-    __tablename__ = "info_empresa"
+    __tablename__ = "focus_configuracoes"
     id = Column(Integer, primary_key=True, index=True)
     
     # Dados da Empresa
