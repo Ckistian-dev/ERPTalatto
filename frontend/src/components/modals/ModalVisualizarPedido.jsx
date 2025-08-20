@@ -334,7 +334,7 @@ export default function ModalVisualizarPedido({ pedido = pedidoVazio, onClose })
 
     return (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-white rounded-lg shadow-2xl w-full max-w-4xl max-h-[95vh] flex flex-col">
+            <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[95vh] flex flex-col">
                 <div className="p-4 overflow-y-auto" id="conteudo-orcamento">
                     {loading ? (
                         <div className="flex justify-center items-center h-64">
