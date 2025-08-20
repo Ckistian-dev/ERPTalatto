@@ -1,8 +1,13 @@
-// ModalVisualizarPedido.jsx
+import React, { useMemo, useState, useEffect } from 'react';
+import axios from 'axios';
 import { X } from 'lucide-react';
 import { FaFilePdf } from 'react-icons/fa';
 import html2pdf from 'html2pdf.js';
+import { toast } from 'react-toastify';
 
+const API_URL = import.meta.env.VITE_API_BASE_URL;
+
+// Objeto para simular um pedido quando não há dados
 const pedidoVazio = {
     id: '',
     data_emissao: '',
@@ -10,218 +15,350 @@ const pedidoVazio = {
     cliente_nome: '',
     vendedor_nome: '',
     origem_venda: '',
+    situacao_pedido: '',
     tipo_frete: '',
     transportadora_nome: '',
-    valor_frete: '',
-    prazo_entrega_dias: '', // <-- NOVO CAMPO
-    total: '',
-    desconto_total: '',
-    total_com_desconto: '',
+    valor_frete: 0,
+    prazo_entrega_dias: '',
+    total: 0,
+    desconto_total: 0,
+    total_com_desconto: 0,
     observacao: '',
-    lista_itens: [],
-    formas_pagamento: [],
+    lista_itens: '[]',
+    formas_pagamento: '[]',
 };
 
-export default function ModalVisualizarPedido({ pedido = pedidoVazio, onClose }) {
-    const itens = Array.isArray(pedido.lista_itens)
-        ? pedido.lista_itens
-        : JSON.parse(pedido.lista_itens || '[]');
+// =================================================================================
+// LÓGICA DE CÁLCULO
+// =================================================================================
+const faixasDescontoDefinidas = [120, 60, 50, 48, 40, 36, 30, 25, 24, 20, 18, 12, 10, 8, 7, 6, 5, 4, 3, 2];
 
-    const formasPagamento = typeof pedido.formas_pagamento === 'string'
-        ? JSON.parse(pedido.formas_pagamento || '[]')
-        : pedido.formas_pagamento || [];
+const getPriceConfig = (tabelaPrecoId, precosDisponiveis) => {
+    if (!precosDisponiveis || !tabelaPrecoId) return null;
+    const searchTerm = String(tabelaPrecoId).trim().toLowerCase();
+    const precoEncontrado = precosDisponiveis.find(p => {
+        const idStr = p.id ? String(p.id).trim().toLowerCase() : '';
+        const nomeStr = p.nome ? String(p.nome).trim().toLowerCase() : '';
+        return idStr === searchTerm || nomeStr === searchTerm;
+    });
+    return precoEncontrado ? precoEncontrado.config : null;
+};
 
-    const gerarPDF = () => {
-        const elemento = document.getElementById('conteudo-pedido');
+const getDescontoAplicado = (quantidade, descontos) => {
+    if (!descontos) return 0;
+    for (const faixa of faixasDescontoDefinidas) {
+        if (quantidade >= faixa && descontos[faixa] && Number(descontos[faixa]) > 0) {
+            return parseFloat(descontos[faixa]);
+        }
+    }
+    return 0;
+};
 
-        const botoesParaEsconder = elemento.querySelectorAll('.no-print');
-        botoesParaEsconder.forEach(btn => btn.style.display = 'none');
+const calcularValoresItem = (item, precosDisponiveis) => {
+    const priceConfig = getPriceConfig(item.tabela_preco_id, precosDisponiveis);
+    const quantidade = Number(item.quantidade_itens) || 1;
+    if (!priceConfig || typeof priceConfig.valor === 'undefined') {
+        const subtotalSalvo = Number(item.subtotal) || 0;
+        return { ...item, preco_unitario: quantidade > 0 ? subtotalSalvo / quantidade : 0, total_com_desconto: subtotalSalvo };
+    }
+    const precoUnitarioBase = parseFloat(priceConfig.valor);
+    const descontoUnitario = getDescontoAplicado(quantidade, priceConfig.descontos);
+    const precoUnitarioFinal = precoUnitarioBase - descontoUnitario;
+    return { ...item, preco_unitario: precoUnitarioFinal, total_com_desconto: precoUnitarioFinal * quantidade };
+};
 
-        const options = {
-            margin: [10, 10, 10, 10],
-            filename: `pedido_${pedido.id}.pdf`,
-            image: { type: 'jpeg', quality: 0.98 },
-            html2canvas: { scale: 3, dpi: 300, letterRendering: true },
-            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-        };
+// =================================================================================
+// COMPONENTES DE VISUALIZAÇÃO
+// =================================================================================
+function formatarValor(valor) {
+    const numero = Number(valor);
+    if (isNaN(numero)) return 'R$ 0,00';
+    return numero.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
 
-        const estilosOriginais = elemento.style.cssText;
-        elemento.style.fontFamily = '"Arial", "Helvetica Neue", Helvetica, sans-serif';
-        elemento.style.color = '#333';
-        elemento.style.backgroundColor = '#fff';
+function CabecalhoEmpresa() {
+    return (
+        <header className="flex justify-between items-start pb-3 border-b">
+            <div className="flex-shrink-0">
+                <img src="https://i.ibb.co/gLDXc5n8/image.png" alt="Logo Talatto Painéis" className="h-16 w-auto" crossOrigin="anonymous" />
+            </div>
+            <div className="text-right text-[11px] text-gray-600">
+                <p className="font-bold text-xs text-gray-800">Talatto Industria e Comercio LTDA</p>
+                <p>CNPJ: 29.987.353/0001-09</p>
+                <p>R. Alberto Dalcanale, 3103 - Jd. Anapolis</p>
+                <p>Toledo - PR, 85905-415 | (45) 2033-7000</p>
+            </div>
+        </header>
+    );
+}
 
-        html2pdf()
-            .set(options)
-            .from(elemento)
-            .save()
-            .then(() => {
-                elemento.style.cssText = estilosOriginais;
-                botoesParaEsconder.forEach(btn => btn.style.display = '');
-            });
-    };
+// --- COMPONENTE DE DETALHES ATUALIZADO (LAYOUT ORIGINAL) ---
+function DetalhesGerais({ pedido }) {
+    return (
+        <section className="mt-4 text-xs">
+            <div className="grid grid-cols-3 gap-x-4 gap-y-2">
+                <div>
+                    <span className="text-gray-500">Cliente:</span>
+                    <p className="font-semibold text-gray-800">{pedido.cliente_nome || "Não informado"}</p>
+                </div>
+                <div>
+                    <span className="text-gray-500">Emissão:</span>
+                    <p className="font-semibold text-gray-800">{pedido.data_emissao || "Não informada"}</p>
+                </div>
+                <div>
+                    <span className="text-gray-500">Situação:</span>
+                    <p className="font-semibold text-gray-800">{pedido.situacao_pedido || "Não informada"}</p>
+                </div>
+                <div>
+                    <span className="text-gray-500">Vendedor:</span>
+                    <p className="font-semibold text-gray-800">{pedido.vendedor_nome || "Não informado"}</p>
+                </div>
+                <div>
+                    <span className="text-gray-500">Validade:</span>
+                    <p className="font-semibold text-gray-800">{pedido.data_validade || "Não informada"}</p>
+                </div>
+                <div>
+                    <span className="text-gray-500">Prazo Entrega:</span>
+                    <p className="font-semibold text-gray-800">{pedido.prazo_entrega_dias ? `${pedido.prazo_entrega_dias} dias úteis` : "Não informado"}</p>
+                </div>
+            </div>
+        </section>
+    );
+}
 
 
+function TabelaItens({ itens }) {
+    return (
+        <div className="mt-5">
+            <h3 className="text-base font-semibold text-gray-800 mb-2">Itens do Orçamento</h3>
+            <div className="overflow-x-auto border rounded-md">
+                <table className="w-full text-xs text-left text-gray-600">
+                    <thead className="bg-gray-50 text-gray-700 uppercase">
+                        <tr>
+                            <th scope="col" className="px-3 py-2">Produto/Serviço</th>
+                            <th scope="col" className="px-3 py-2 text-center">Qtd.</th>
+                            <th scope="col" className="px-3 py-2 text-right">Valor Unit.</th>
+                            <th scope="col" className="px-3 py-2 text-right">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {itens && itens.length > 0 ? (
+                            itens.map((item, index) => (
+                                <tr key={item.produto_id || index} className="bg-white border-b last:border-b-0 hover:bg-gray-50">
+                                    <td className="px-3 py-2 font-medium text-gray-900">{item.produto || "Produto não encontrado"}</td>
+                                    <td className="px-3 py-2 text-center">{item.quantidade_itens || 0}</td>
+                                    <td className="px-3 py-2 text-right">{formatarValor(item.preco_unitario)}</td>
+                                    <td className="px-3 py-2 text-right font-semibold">{formatarValor(item.total_com_desconto)}</td>
+                                </tr>
+                            ))
+                        ) : (
+                            <tr><td colSpan="4" className="text-center py-3 text-gray-500">Nenhum item adicionado.</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+}
+
+function TabelaFormasPagamento({ formasPagamento }) {
+     return (
+        <div className="mt-5">
+            <h3 className="text-base font-semibold text-gray-800 mb-2">Formas de Pagamento</h3>
+            <div className="overflow-x-auto border rounded-md">
+                <table className="w-full text-xs text-left text-gray-600">
+                    <thead className="bg-gray-50 text-gray-700 uppercase">
+                        <tr>
+                            <th scope="col" className="px-3 py-2">Tipo</th>
+                            <th scope="col" className="px-3 py-2">Detalhes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {formasPagamento && formasPagamento.length > 0 ? (
+                            formasPagamento.map((fp, index) => {
+                                let detalhes = '';
+                                if (fp.tipo?.toLowerCase() === 'parcelamento' && fp.parcelas > 0) {
+                                    detalhes = `${fp.parcelas}x de ${formatarValor(fp.valor_parcela)}`;
+                                } else if (fp.valor_pix) detalhes = `${formatarValor(fp.valor_pix)}`;
+                                else if (fp.valor_boleto) detalhes = `${formatarValor(fp.valor_boleto)}`;
+                                else if (fp.valor_dinheiro) detalhes = `${formatarValor(fp.valor_dinheiro)}`;
+                                return (
+                                    <tr key={index} className="bg-white border-b last:border-b-0 hover:bg-gray-50">
+                                        <td className="px-3 py-2 font-medium text-gray-900">{fp.tipo || "Não especificado"}</td>
+                                        <td className="px-3 py-2">{detalhes || "Não informado"}</td>
+                                    </tr>
+                                );
+                            })
+                        ) : (
+                            <tr><td colSpan="2" className="text-center py-3 text-gray-500">Nenhuma forma de pagamento.</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+}
+
+function TotaisOrcamento({ pedido, totalItensRecalculado }) {
+    const valorFrete = Number(pedido.valor_frete) || 0;
+    const descontoGeral = Number(pedido.desconto_total) || 0;
+    const totalFinal = totalItensRecalculado + valorFrete - descontoGeral;
 
     return (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center">
-            <div
-                className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto relative"
-                id="conteudo-pedido"
-            >
-                <button
-                    onClick={onClose}
-                    className="absolute top-5 right-5 text-gray-500 hover:text-red-500 no-print"
-                >
-                    <X size={22} />
-                </button>
-
-                <h2 className="text-2xl font-bold text-gray-800">
-                    Detalhes do Pedido #{pedido.id}
-                </h2>
-
-                {/* INFORMAÇÕES GERAIS */}
-                <section className="grid grid-cols-1 mt-4">
-                    <h3 className="text-lg font-bold text-gray-800">Informações Gerais</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 text-gray-600">
-                        <Info label="Cliente" value={pedido.cliente_nome} />
-                        <Info label="Vendedor" value={pedido.vendedor_nome} />
-                        <Info label="Origem da Venda" value={pedido.origem_venda} />
-                        <Info label="Situação" value={pedido.situacao_pedido} />
-                        <Info label="Data de Emissão" value={pedido.data_emissao} />
-                        <Info label="Validade" value={pedido.data_validade} />
+        <div className="flex justify-end mt-6 text-sm px-2">
+            <div className="w-full">
+                <div className="flex justify-between py-1">
+                    <span className="text-gray-600">Total dos Itens:</span>
+                    <span className="font-medium text-gray-800">{formatarValor(totalItensRecalculado)}</span>
+                </div>
+                <div className="flex justify-between py-1">
+                    <span className="text-gray-600">Frete:</span>
+                    <span className="font-medium text-gray-800">{formatarValor(valorFrete)}</span>
+                </div>
+                {descontoGeral > 0 && (
+                    <div className="flex justify-between py-1">
+                        <span className="text-gray-600">Desconto Geral:</span>
+                        <span className="font-medium text-red-600">(- {formatarValor(descontoGeral)})</span>
                     </div>
-                    <div className="grid grid-cols-1 text-gray-600">
-                        {pedido.observacao && (
-                            <Info label="Observação" value={pedido.observacao} />
-                        )}
-                    </div>
-                </section>
-
-                {/* INFORMAÇÕES DE FRETE */}
-                <section className="grid grid-cols-1 mt-4">
-                    <h3 className="text-lg font-bold text-gray-800">Informações de Frete</h3>
-                    <div className="text-gray-600">
-                        <div><strong>Tipo de Frete:</strong> {pedido.tipo_frete || '—'}</div>
-                        <div><strong>Transportadora:</strong> {pedido.transportadora_nome || '—'}</div>
-                        <div><strong>Valor do Frete:</strong> {formatarValor(pedido.valor_frete)}</div>
-                        {/* LINHA ADICIONADA */}
-                        <div><strong>Prazo de Entrega:</strong> {pedido.prazo_entrega_dias ? `${pedido.prazo_entrega_dias} dias úteis` : '—'}</div>
-                    </div>
-                </section>
-
-                {/* ITENS DO PEDIDO */}
-                <section className="grid grid-cols-1 mt-4">
-                    <h3 className="text-lg font-bold text-gray-800 mb-2">Itens do Pedido</h3>
-                    <Table
-                        headers={['Produto', 'Qtd', 'Subtotal']}
-                        rows={itens.map(item => [
-                            item.produto,
-                            item.quantidade_itens,
-                            formatarValor(item.subtotal),
-                        ])}
-                    />
-                </section>
-
-                {/* FORMAS DE PAGAMENTO */}
-                <section className="grid grid-cols-1 mt-4">
-                    <h3 className="text-lg font-bold text-gray-800 mb-2">Formas de Pagamento</h3>
-                    <Table
-                        headers={['Tipo', 'Detalhes']}
-                        rows={formasPagamento.map(fp => {
-                            let valor = '';
-                            if (fp.tipo?.toLowerCase() === 'parcelamento' && fp.parcelas > 0) {
-                                const valorParcela = fp.valor_parcela || 0;
-                                valor = `${fp.parcelas}x de ${formatarValor(valorParcela)}`;
-                            } else if (fp.valor_pix) valor = formatarValor(fp.valor_pix);
-                            else if (fp.valor_boleto) valor = formatarValor(fp.valor_boleto);
-                            else if (fp.valor_dinheiro) valor = formatarValor(fp.valor_dinheiro);
-
-                            return valor ? [fp.tipo, valor] : null;
-                        }).filter(Boolean)}
-                    />
-
-                    {/* TOTAIS BONITOS */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-                        <CardResumo label="Total Bruto" valor={pedido.total + pedido.valor_frete} />
-                        <CardResumo label="Desconto" valor={pedido.desconto_total} />
-                        <CardResumo label="Total com Desconto" valor={pedido.total_com_desconto} destaque />
-                    </div>
-                </section>
-
-                {/* BOTÃO GERAR PDF */}
-                <div className="mt-6 flex justify-end">
-                    <button
-                        onClick={gerarPDF}
-                        className="bg-red-700 hover:bg-red-800 text-white px-4 py-2 rounded flex items-center gap-2 no-print"
-                    >
-                        <FaFilePdf /> Gerar PDF do Pedido
-                    </button>
+                )}
+                <div className="flex justify-between py-2 mt-2 border-t-2 border-gray-200">
+                    <span className="text-base font-bold text-gray-900">VALOR TOTAL:</span>
+                    <span className="text-base font-bold text-green-700">{formatarValor(totalFinal)}</span>
                 </div>
             </div>
         </div>
     );
 }
 
-// Info simples
-function Info({ label, value }) {
+function InformacoesAdicionais({ observacao }) {
     return (
-        <div>
-            <strong>{label}:</strong> {value || '—'}
-        </div>
+        <footer className="mt-5 pt-3 border-t text-xs text-gray-600 space-y-2">
+             {observacao && (<div><h4 className="font-semibold text-gray-700 mb-0.5">Observações</h4><p className="whitespace-pre-wrap">{observacao}</p></div>)}
+        </footer>
     );
 }
 
-// Tabela
-function Table({ headers = [], rows = [] }) {
-    return (
-        <table className="w-full text-sm border border-gray-300">
-            <thead className="bg-gray-100">
-                <tr>
-                    {headers.map((header, idx) => (
-                        <th key={idx} className="p-2 border text-left">{header}</th>
-                    ))}
-                </tr>
-            </thead>
-            <tbody>
-                {rows.length > 0 ? (
-                    rows.map((cols, rowIdx) => (
-                        <tr key={rowIdx}>
-                            {cols.map((col, colIdx) => (
-                                <td key={colIdx} className="p-2 border whitespace-nowrap">{col}</td>
-                            ))}
-                        </tr>
-                    ))
-                ) : (
-                    <tr>
-                        <td colSpan={headers.length} className="p-2 border text-center text-gray-400">
-                            Nenhum dado disponível
-                        </td>
-                    </tr>
-                )}
-            </tbody>
-        </table>
-    );
-}
 
-// Card com destaque
-function CardResumo({ label, valor, destaque = false }) {
+// --- COMPONENTE PRINCIPAL ---
+export default function ModalVisualizarPedido({ pedido = pedidoVazio, onClose }) {
+    
+    // Estados internos para carregar os dados
+    const [produtosDisponiveis, setProdutosDisponiveis] = useState([]);
+    const [precosDisponiveis, setPrecosDisponiveis] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    const itensOriginais = useMemo(() => {
+        try {
+            return Array.isArray(pedido.lista_itens) ? pedido.lista_itens : JSON.parse(pedido.lista_itens || '[]');
+        } catch (e) { return []; }
+    }, [pedido.lista_itens]);
+
+    // Efeito para buscar os dados quando o modal é aberto
+    useEffect(() => {
+        const carregarDadosEssenciais = async () => {
+            if (!itensOriginais || itensOriginais.length === 0) {
+                setLoading(false);
+                return;
+            }
+            
+            setLoading(true);
+            try {
+                const promessaProdutos = axios.get(`${API_URL}/produtos_dropdown`);
+                const promessasPrecos = itensOriginais.map(item =>
+                    axios.get(`${API_URL}/tabela_precos_por_produto?produto_id=${item.produto_id}`)
+                );
+
+                const [produtosRes, ...respostasPrecos] = await Promise.all([
+                    promessaProdutos,
+                    ...promessasPrecos
+                ]);
+
+                setProdutosDisponiveis(produtosRes.data);
+
+                const todasAsTabelas = respostasPrecos.flatMap(res => res.data);
+                
+                const tabelasUnicas = new Map();
+                todasAsTabelas.forEach(tabela => {
+                    if (!tabelasUnicas.has(tabela.id)) {
+                        tabelasUnicas.set(tabela.id, tabela);
+                    }
+                });
+                setPrecosDisponiveis(Array.from(tabelasUnicas.values()));
+
+            } catch (error) {
+                console.error("Erro ao carregar dados essenciais no modal:", error);
+                toast.error("Erro ao carregar dados para visualização.");
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        carregarDadosEssenciais();
+    }, [itensOriginais]);
+
+    const itensEnriquecidosECalculados = useMemo(() => {
+        if (loading) return [];
+        if (!itensOriginais) return [];
+        return itensOriginais.map(item => {
+            const produtoInfo = produtosDisponiveis.find(p => p.id === item.produto_id);
+            const itemComNome = { ...item, produto: produtoInfo ? produtoInfo.descricao : item.produto };
+            return calcularValoresItem(itemComNome, precosDisponiveis);
+        });
+    }, [itensOriginais, produtosDisponiveis, precosDisponiveis, loading]);
+    
+    const totalItensRecalculado = useMemo(() => {
+        return itensEnriquecidosECalculados.reduce((acc, item) => acc + (item.total_com_desconto || 0), 0);
+    }, [itensEnriquecidosECalculados]);
+
+    const formasPagamento = useMemo(() => {
+        try {
+            return Array.isArray(pedido.formas_pagamento) ? pedido.formas_pagamento : JSON.parse(pedido.formas_pagamento || '[]');
+        } catch (e) { return []; }
+    }, [pedido.formas_pagamento]);
+
+    const gerarPDF = () => {
+        const elemento = document.getElementById('conteudo-orcamento');
+        const botoes = elemento.querySelectorAll('.no-print');
+        botoes.forEach(btn => btn.style.visibility = 'hidden');
+        const options = {
+            margin: [8, 8, 8, 8],
+            filename: `orcamento_${pedido.id || 'sem_numero'}.pdf`,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2, dpi: 300, letterRendering: true, useCORS: true },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+        html2pdf().set(options).from(elemento).save().finally(() => {
+            botoes.forEach(btn => btn.style.visibility = 'visible');
+        });
+    };
+
     return (
-        <div className={`p-4 rounded-xl border shadow-sm ${destaque ? 'bg-green-100' : 'bg-gray-50'}`}>
-            <div className="text-sm text-gray-600">{label}</div>
-            <div className={`text-lg font-semibold ${destaque ? 'text-green-800' : 'text-gray-800'}`}>
-                {formatarValor(valor)}
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg shadow-2xl w-full max-w-4xl max-h-[95vh] flex flex-col">
+                <div className="p-4 overflow-y-auto" id="conteudo-orcamento">
+                    {loading ? (
+                        <div className="flex justify-center items-center h-64">
+                            <p className="text-gray-500">Carregando dados do orçamento...</p>
+                        </div>
+                    ) : (
+                        <>
+                            <CabecalhoEmpresa />
+                            <div className="flex justify-between items-center mt-4">
+                                <h2 className="text-xl font-bold text-gray-800">Orçamento #{pedido.id || 'N/A'}</h2>
+                            </div>
+                            <DetalhesGerais pedido={pedido} />
+                            <TabelaItens itens={itensEnriquecidosECalculados} />
+                            <TabelaFormasPagamento formasPagamento={formasPagamento} />
+                            <TotaisOrcamento pedido={pedido} totalItensRecalculado={totalItensRecalculado} />
+                            <InformacoesAdicionais observacao={pedido.observacao} />
+                        </>
+                    )}
+                </div>
+                <div className="flex-shrink-0 p-3 bg-gray-50 border-t rounded-b-lg flex justify-between items-center no-print">
+                     <button onClick={onClose} className="text-gray-600 hover:text-gray-900 text-sm font-medium py-1.5 px-3 rounded-md">Fechar</button>
+                    <button onClick={gerarPDF} disabled={loading} className="bg-red-700 hover:bg-red-800 text-white font-bold py-1.5 px-3 rounded-md flex items-center gap-2 transition-colors duration-200 text-sm disabled:opacity-50 disabled:cursor-not-allowed"><FaFilePdf /> Baixar PDF</button>
+                </div>
             </div>
         </div>
     );
-}
-
-// Formata valor em BRL
-function formatarValor(valor) {
-    const numero = Number(valor);
-    if (isNaN(numero)) return '—';
-    return numero.toLocaleString('pt-BR', {
-        style: 'currency',
-        currency: 'BRL',
-        minimumFractionDigits: 2,
-    });
 }
