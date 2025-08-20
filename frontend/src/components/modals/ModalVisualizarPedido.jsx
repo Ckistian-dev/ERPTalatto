@@ -1,13 +1,40 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import axios from 'axios';
 import { X } from 'lucide-react';
-import { FaFilePdf } from 'react-icons/fa';
+import { FaFilePdf, FaBuilding } from 'react-icons/fa';
 import html2pdf from 'html2pdf.js';
 import { toast } from 'react-toastify';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL;
 
-// Objeto para simular um pedido quando não há dados
+// --- DADOS DAS EMPRESAS PARA SELEÇÃO ---
+const empresasDisponiveis = [
+    {
+        id: 'industria',
+        nome: 'Talatto Industria e Comercio LTDA',
+        cnpj: '29.987.353/0001-09',
+        endereco: 'R. Alberto Dalcanale, 3103 - Jd. Anapolis, Toledo - PR',
+        telefone: '(45) 2033-7000',
+        logo: 'https://i.ibb.co/gLDXc5n8/image.png'
+    },
+    {
+        id: 'varejo',
+        nome: 'Talatto Varejo LTDA',
+        cnpj: '47.515.765/0001-28',
+        endereco: 'R. Alberto Dalcanale, 3103 - Jd. Anapolis, Toledo - PR',
+        telefone: '(45) 2033-7000',
+        logo: 'https://i.ibb.co/gLDXc5n8/image.png'
+    },
+    {
+        id: 'distribuidora',
+        nome: 'Tlt Distribuidora LTDA',
+        cnpj: '60.276.408/0001-12',
+        endereco: 'R. Alberto Dalcanale, 3103 - Jd. Anapolis, Toledo - PR',
+        telefone: '(45) 2033-7000',
+        logo: 'https://i.ibb.co/gLDXc5n8/image.png'
+    }
+];
+
 const pedidoVazio = {
     id: '',
     data_emissao: '',
@@ -76,23 +103,23 @@ function formatarValor(valor) {
     return numero.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-function CabecalhoEmpresa() {
+function CabecalhoEmpresa({ empresa }) {
+    if (!empresa) return null;
     return (
         <header className="flex justify-between items-start pb-3 border-b">
             <div className="flex-shrink-0">
-                <img src="https://i.ibb.co/gLDXc5n8/image.png" alt="Logo Talatto Painéis" className="h-16 w-auto" crossOrigin="anonymous" />
+                <img src={empresa.logo} alt={`Logo ${empresa.nome}`} className="h-16 w-auto" crossOrigin="anonymous" />
             </div>
             <div className="text-right text-[11px] text-gray-600">
-                <p className="font-bold text-xs text-gray-800">Talatto Industria e Comercio LTDA</p>
-                <p>CNPJ: 29.987.353/0001-09</p>
-                <p>R. Alberto Dalcanale, 3103 - Jd. Anapolis</p>
-                <p>Toledo - PR, 85905-415 | (45) 2033-7000</p>
+                <p className="font-bold text-xs text-gray-800">{empresa.nome}</p>
+                <p>CNPJ: {empresa.cnpj}</p>
+                <p>{empresa.endereco}</p>
+                <p>Telefone: {empresa.telefone}</p>
             </div>
         </header>
     );
 }
 
-// --- COMPONENTE DE DETALHES ATUALIZADO (LAYOUT ORIGINAL) ---
 function DetalhesGerais({ pedido }) {
     return (
         <section className="mt-4 text-xs">
@@ -125,7 +152,6 @@ function DetalhesGerais({ pedido }) {
         </section>
     );
 }
-
 
 function TabelaItens({ itens }) {
     return (
@@ -179,9 +205,9 @@ function TabelaFormasPagamento({ formasPagamento }) {
                                 let detalhes = '';
                                 if (fp.tipo?.toLowerCase() === 'parcelamento' && fp.parcelas > 0) {
                                     detalhes = `${fp.parcelas}x de ${formatarValor(fp.valor_parcela)}`;
-                                } else if (fp.valor_pix) detalhes = `${formatarValor(fp.valor_pix)}`;
-                                else if (fp.valor_boleto) detalhes = `${formatarValor(fp.valor_boleto)}`;
-                                else if (fp.valor_dinheiro) detalhes = `${formatarValor(fp.valor_dinheiro)}`;
+                                } else if (fp.valor_pix) detalhes = `PIX: ${formatarValor(fp.valor_pix)}`;
+                                else if (fp.valor_boleto) detalhes = `Boleto: ${formatarValor(fp.valor_boleto)}`;
+                                else if (fp.valor_dinheiro) detalhes = `Dinheiro: ${formatarValor(fp.valor_dinheiro)}`;
                                 return (
                                     <tr key={index} className="bg-white border-b last:border-b-0 hover:bg-gray-50">
                                         <td className="px-3 py-2 font-medium text-gray-900">{fp.tipo || "Não especificado"}</td>
@@ -212,7 +238,7 @@ function TotaisOrcamento({ pedido, totalItensRecalculado }) {
                     <span className="font-medium text-gray-800">{formatarValor(totalItensRecalculado)}</span>
                 </div>
                 <div className="flex justify-between py-1">
-                    <span className="text-gray-600">Frete:</span>
+                    <span className="text-gray-600">Frete ({pedido.tipo_frete || 'N/D'}):</span>
                     <span className="font-medium text-gray-800">{formatarValor(valorFrete)}</span>
                 </div>
                 {descontoGeral > 0 && (
@@ -238,14 +264,16 @@ function InformacoesAdicionais({ observacao }) {
     );
 }
 
-
-// --- COMPONENTE PRINCIPAL ---
+// --- COMPONENTE PRINCIPAL ATUALIZADO ---
 export default function ModalVisualizarPedido({ pedido = pedidoVazio, onClose }) {
     
-    // Estados internos para carregar os dados
+    const [view, setView] = useState('selecionar_empresa'); // 'selecionar_empresa' ou 'visualizar_orcamento'
+    const [empresaSelecionada, setEmpresaSelecionada] = useState(null);
+    const [empresaIdTemporaria, setEmpresaIdTemporaria] = useState('industria');
+
     const [produtosDisponiveis, setProdutosDisponiveis] = useState([]);
     const [precosDisponiveis, setPrecosDisponiveis] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
 
     const itensOriginais = useMemo(() => {
         try {
@@ -253,48 +281,52 @@ export default function ModalVisualizarPedido({ pedido = pedidoVazio, onClose })
         } catch (e) { return []; }
     }, [pedido.lista_itens]);
 
-    // Efeito para buscar os dados quando o modal é aberto
     useEffect(() => {
-        const carregarDadosEssenciais = async () => {
-            if (!itensOriginais || itensOriginais.length === 0) {
-                setLoading(false);
-                return;
-            }
-            
-            setLoading(true);
-            try {
-                const promessaProdutos = axios.get(`${API_URL}/produtos_dropdown`);
-                const promessasPrecos = itensOriginais.map(item =>
-                    axios.get(`${API_URL}/tabela_precos_por_produto?produto_id=${item.produto_id}`)
-                );
-
-                const [produtosRes, ...respostasPrecos] = await Promise.all([
-                    promessaProdutos,
-                    ...promessasPrecos
-                ]);
-
-                setProdutosDisponiveis(produtosRes.data);
-
-                const todasAsTabelas = respostasPrecos.flatMap(res => res.data);
+        if (view === 'visualizar_orcamento') {
+            const carregarDadosEssenciais = async () => {
+                if (!itensOriginais || itensOriginais.length === 0) {
+                    setLoading(false);
+                    return;
+                }
                 
-                const tabelasUnicas = new Map();
-                todasAsTabelas.forEach(tabela => {
-                    if (!tabelasUnicas.has(tabela.id)) {
-                        tabelasUnicas.set(tabela.id, tabela);
-                    }
-                });
-                setPrecosDisponiveis(Array.from(tabelasUnicas.values()));
+                setLoading(true);
+                try {
+                    const promessaProdutos = axios.get(`${API_URL}/produtos_dropdown`);
+                    const promessasPrecos = itensOriginais.map(item =>
+                        axios.get(`${API_URL}/tabela_precos_por_produto?produto_id=${item.produto_id}`)
+                    );
 
-            } catch (error) {
-                console.error("Erro ao carregar dados essenciais no modal:", error);
-                toast.error("Erro ao carregar dados para visualização.");
-            } finally {
-                setLoading(false);
-            }
-        };
+                    const [produtosRes, ...respostasPrecos] = await Promise.all([
+                        promessaProdutos,
+                        ...promessasPrecos
+                    ]);
 
-        carregarDadosEssenciais();
-    }, [itensOriginais]);
+                    setProdutosDisponiveis(produtosRes.data);
+                    const todasAsTabelas = respostasPrecos.flatMap(res => res.data);
+                    const tabelasUnicas = new Map();
+                    todasAsTabelas.forEach(tabela => {
+                        if (!tabelasUnicas.has(tabela.id)) {
+                            tabelasUnicas.set(tabela.id, tabela);
+                        }
+                    });
+                    setPrecosDisponiveis(Array.from(tabelasUnicas.values()));
+
+                } catch (error) {
+                    toast.error("Erro ao carregar dados para visualização.");
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            carregarDadosEssenciais();
+        }
+    }, [view, itensOriginais]);
+
+    const handleContinuar = () => {
+        const empresa = empresasDisponiveis.find(e => e.id === empresaIdTemporaria);
+        setEmpresaSelecionada(empresa);
+        setView('visualizar_orcamento');
+    };
 
     const itensEnriquecidosECalculados = useMemo(() => {
         if (loading) return [];
@@ -332,6 +364,33 @@ export default function ModalVisualizarPedido({ pedido = pedidoVazio, onClose })
         });
     };
 
+    if (view === 'selecionar_empresa') {
+        return (
+            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="bg-white rounded-lg shadow-2xl w-full max-w-md p-6 text-center">
+                    <FaBuilding className="mx-auto text-4xl text-cyan-600 mb-4" />
+                    <h2 className="text-xl font-bold text-gray-800 mb-2">Selecionar Emitente</h2>
+                    <p className="text-sm text-gray-600 mb-6">Escolha a empresa que emitirá este orçamento.</p>
+                    
+                    <select
+                        value={empresaIdTemporaria}
+                        onChange={(e) => setEmpresaIdTemporaria(e.target.value)}
+                        className="w-full border p-3 rounded text-sm bg-gray-50 shadow-sm mb-6"
+                    >
+                        {empresasDisponiveis.map(empresa => (
+                            <option key={empresa.id} value={empresa.id}>{empresa.nome}</option>
+                        ))}
+                    </select>
+
+                    <div className="flex justify-center gap-4">
+                        <button onClick={onClose} className="text-gray-600 hover:text-gray-900 font-medium py-2 px-6 rounded-lg">Cancelar</button>
+                        <button onClick={handleContinuar} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-6 rounded-lg">Continuar</button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[95vh] flex flex-col">
@@ -342,7 +401,7 @@ export default function ModalVisualizarPedido({ pedido = pedidoVazio, onClose })
                         </div>
                     ) : (
                         <>
-                            <CabecalhoEmpresa />
+                            <CabecalhoEmpresa empresa={empresaSelecionada} />
                             <div className="flex justify-between items-center mt-4">
                                 <h2 className="text-xl font-bold text-gray-800">Orçamento #{pedido.id || 'N/A'}</h2>
                             </div>
