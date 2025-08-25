@@ -1,157 +1,122 @@
 // /components/modals/ModalFaturarPedido.jsx
 
-import { useState, useEffect, useCallback } from 'react';
-import { X, FileText, AlertCircle, CheckCircle, Loader2, Send } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, FileText, Download, ExternalLink, Save } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 
 import CampoTextsimples from '@/components/campos/CampoTextsimples';
+import CampoNumsimples from '@/components/campos/CampoNumSimples';
 
 export default function ModalFaturarPedido({
     onClose,
-    onConfirmarFaturamento,
-    onNfeProcessando, // Callback para indicar que a NF-e foi enviada
+    onPedidoFaturado, // Callback para atualizar a lista principal
     pedidoSelecionado,
     API_URL
 }) {
-    // Estados para gerenciar o fluxo da UI
-    const [statusEnvio, setStatusEnvio] = useState('INICIAL'); // INICIAL, ENVIANDO, SUCESSO, ERRO
-    const [mensagem, setMensagem] = useState('');
-    const [numeroNfExibicao, setNumeroNfExibicao] = useState('');
+    const [dadosManuais, setDadosManuais] = useState({
+        numero_nf: '',
+        nfe_chave: '',
+        data_nf: new Date().toISOString().split('T')[0] // Data de hoje por padrão
+    });
+    const [isSaving, setIsSaving] = useState(false);
 
-    // Função para tratar erros de forma centralizada
-    const handleError = useCallback((errorMsg) => {
-        setStatusEnvio('ERRO');
-        setMensagem(errorMsg);
-        toast.error(errorMsg);
-    }, []);
+    const handleInputChange = (e) => {
+        const { name, value } = e.target;
+        setDadosManuais(prev => ({ ...prev, [name]: value }));
+    };
 
-    // Função para ENVIAR a NF-e para o backend
-    const enviarNfe = async () => {
-        if (!pedidoSelecionado?.id) {
-            handleError("ID do Pedido não encontrado.");
+    const handleGerarXml = async () => {
+        try {
+            const response = await axios.get(`${API_URL}/nfe/gerar-xml-sebrae/${pedidoSelecionado.id}`, {
+                responseType: 'blob', // Importante para o download do arquivo
+            });
+            
+            // Cria um link temporário para iniciar o download
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `nfe_pedido_${pedidoSelecionado.id}_para_importar.xml`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+
+            toast.success("XML gerado! Importe no portal do Sebrae.");
+        } catch (error) {
+            toast.error("Erro ao gerar o XML.");
+            console.error(error);
+        }
+    };
+
+    const handleSalvarDadosManuais = async () => {
+        if (!dadosManuais.numero_nf || !dadosManuais.nfe_chave) {
+            toast.warn("Por favor, preencha o Número da NF-e e a Chave de Acesso.");
             return;
         }
-        setStatusEnvio('ENVIANDO');
-        setMensagem('Enviando NF-e para processamento...');
+        setIsSaving(true);
         try {
-            // [ALTERAÇÃO 1] Aponta para o novo endpoint da Focus NF-e.
-            const response = await axios.post(`${API_URL}/nfe-focus/emitir`, { pedido_id: pedidoSelecionado.id });
-            const data = response.data;
-
-            if (data.status === 'PROCESSANDO') {
-                setStatusEnvio('SUCESSO');
-                setMensagem('NF-e enviada com sucesso! O status será atualizado em breve.');
-                toast.success('NF-e enviada para processamento!');
-                
-                // [ALTERAÇÃO 2] Usa 'data.ref' em vez de 'data.uuid' para atualizar a UI.
-                // O backend da Focus NF-e retorna uma 'ref', que salvamos no campo 'nfe_uuid' do pedido.
-                onNfeProcessando?.({ 
-                    pedido_id: pedidoSelecionado.id, 
-                    nfe_status: 'PROCESSANDO', 
-                    nfe_uuid: data.ref 
-                });
-                
-                // Fecha o modal após um curto período
-                setTimeout(() => onClose(), 2000);
-
-            } else {
-                handleError(data.message || "Resposta inesperada do servidor.");
-            }
+            await axios.put(`${API_URL}/nfe/atualizar-dados-manuais/${pedidoSelecionado.id}`, {
+                ...dadosManuais,
+                data_nf: new Date(dadosManuais.data_nf).toISOString()
+            });
+            toast.success("Dados da NF-e salvos e pedido movido para expedição!");
+            onPedidoFaturado?.(pedidoSelecionado.id); // Notifica a página pai para remover o pedido da lista
+            onClose();
         } catch (error) {
-            handleError(error.response?.data?.detail || "Erro de comunicação ao enviar NF-e.");
+            toast.error(error.response?.data?.detail || "Erro ao salvar os dados.");
+        } finally {
+            setIsSaving(false);
         }
     };
-
-    // Efeito para configurar o estado inicial do Modal (nenhuma alteração aqui)
-    useEffect(() => {
-        if (pedidoSelecionado?.nfe_status === 'AUTORIZADO') {
-            setStatusEnvio('SUCESSO');
-            setNumeroNfExibicao(`NF-e: ${pedidoSelecionado.numero_nf}`);
-            setMensagem('Este pedido já possui uma NF-e autorizada.');
-        } else if (pedidoSelecionado?.nfe_status === 'PROCESSANDO') {
-            setStatusEnvio('INICIAL');
-            setNumeroNfExibicao('Processando...');
-            setMensagem('A NF-e deste pedido já está em processamento.');
-        } else if (pedidoSelecionado?.nfe_status === 'REJEITADO') {
-            setStatusEnvio('ERRO');
-            setMensagem(`Falha anterior: ${pedidoSelecionado.nfe_rejeicao_motivo || 'Tente enviar novamente.'}`);
-        } else {
-            setStatusEnvio('INICIAL');
-            setMensagem('Pronto para iniciar a emissão da NF-e.');
-        }
-    }, [pedidoSelecionado]);
-
-    const getStatusIcon = () => {
-        if (statusEnvio === 'ENVIANDO') return <Loader2 size={20} className="animate-spin mr-2" />;
-        if (statusEnvio === 'SUCESSO') return <CheckCircle size={18} className="mr-2 flex-shrink-0" />;
-        if (statusEnvio === 'ERRO') return <AlertCircle size={18} className="mr-2 flex-shrink-0" />;
-        return null;
-    };
-    const getStatusColor = () => {
-        if (statusEnvio === 'SUCESSO') return 'bg-green-50 border-green-200 text-green-700';
-        if (statusEnvio === 'ERRO') return 'bg-red-50 border-red-200 text-red-700';
-        return 'bg-blue-50 border-blue-200 text-blue-700';
-    }
-
-    const podeConfirmarFaturamento = pedidoSelecionado?.nfe_status === 'AUTORIZADO';
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md relative transform transition-all duration-300 ease-out">
-                <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors" aria-label="Fechar modal">
+            <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-lg relative">
+                <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
                     <X size={24} />
                 </button>
-                <h2 className="text-xl font-semibold text-gray-800 mb-6 flex items-center">
+                <h2 className="text-xl font-semibold text-gray-800 mb-2 flex items-center">
                     <FileText size={22} className="mr-2" />
-                    Faturar Pedido #{pedidoSelecionado?.id || ''}
+                    Faturar Pedido #{pedidoSelecionado?.id || ''} (Via Sebrae)
                 </h2>
+                <p className="text-sm text-gray-500 mb-6">Siga os passos para emitir a nota manualmente.</p>
 
-                <CampoTextsimples
-                    label="Status/Número NF-e"
-                    name="status_nfe"
-                    value={numeroNfExibicao}
-                    onChange={() => {}}
-                    placeholder="Aguardando emissão..."
-                    disabled={true}
-                />
-                
-                {mensagem && (
-                    <div className={`my-3 p-3 border rounded-md text-sm flex items-start ${getStatusColor()}`}>
-                        {getStatusIcon()}
-                        <span>{mensagem}</span>
-                    </div>
-                )}
-
-                <div className="mt-6 space-y-3">
-                    <button
-                        onClick={enviarNfe}
-                        disabled={statusEnvio === 'ENVIANDO' || statusEnvio === 'SUCESSO' || pedidoSelecionado?.nfe_status === 'AUTORIZADO' || pedidoSelecionado?.nfe_status === 'PROCESSANDO'}
-                        className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors disabled:bg-indigo-300 disabled:cursor-not-allowed"
-                    >
-                        <Send size={18} />
-                        {statusEnvio === 'ERRO' ? 'Tentar Enviar Novamente' : 'Enviar NF-e para Processamento'}
-                    </button>
-                    
-                    <div className="flex flex-col sm:flex-row gap-3">
-                        <button
-                            onClick={onClose}
-                            className="w-full sm:w-auto bg-gray-200 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-300"
-                        >
-                            {podeConfirmarFaturamento ? 'Fechar' : 'Cancelar'}
+                {/* Passo 1: Gerar XML */}
+                <div className="p-4 border rounded-lg mb-4">
+                    <h3 className="font-semibold text-gray-700 mb-2">Passo 1: Gerar e Baixar o XML</h3>
+                    <p className="text-sm text-gray-600 mb-3">Clique no botão para baixar o arquivo XML com os dados do pedido. Você irá importar este arquivo no portal do Sebrae.</p>
+                    <div className="flex gap-3">
+                        <button onClick={handleGerarXml} className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg hover:bg-blue-700">
+                            <Download size={18} />
+                            Gerar XML para Sebrae
                         </button>
-                        <button
-                            onClick={onConfirmarFaturamento}
-                            disabled={!podeConfirmarFaturamento}
-                            className="w-full sm:flex-1 bg-teal-600 text-white px-5 py-2.5 rounded-lg hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 transition-colors disabled:bg-teal-300 disabled:cursor-not-allowed"
-                        >
-                            Confirmar Faturamento e Mover
-                        </button>
+                        <a href="https://emissornfe.sebrae.com.br" target="_blank" rel="noopener noreferrer" className="flex-1 flex items-center justify-center gap-2 bg-gray-600 text-white px-4 py-2.5 rounded-lg hover:bg-gray-700">
+                            <ExternalLink size={18} />
+                            Abrir Portal Sebrae
+                        </a>
                     </div>
                 </div>
 
-                <div className="mt-4 text-xs text-gray-500">
-                    <p><strong>Nota:</strong> Após o envio, o status será atualizado automaticamente quando a SEFAZ autorizar a nota.</p>
+                {/* Passo 2: Inserir Dados */}
+                <div className="p-4 border rounded-lg">
+                    <h3 className="font-semibold text-gray-700 mb-2">Passo 2: Salvar Dados da Nota Emitida</h3>
+                    <p className="text-sm text-gray-600 mb-4">Após emitir a nota no portal do Sebrae, preencha os campos abaixo e salve para mover o pedido para a expedição.</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <CampoNumsimples label="Número da NF-e" name="numero_nf" value={dadosManuais.numero_nf} onChange={handleInputChange} obrigatorio />
+                        <CampoTextsimples label="Data de Emissão" name="data_nf" type="date" value={dadosManuais.data_nf} onChange={handleInputChange} obrigatorio />
+                        <CampoNumsimples label="Chave de Acesso (44 dígitos)" name="nfe_chave" value={dadosManuais.nfe_chave} onChange={handleInputChange} colSpan obrigatorio />
+                    </div>
+                </div>
+
+                <div className="mt-6 flex justify-end gap-3">
+                    <button onClick={onClose} className="px-5 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
+                        Fechar
+                    </button>
+                    <button onClick={handleSalvarDadosManuais} disabled={isSaving} className="flex items-center justify-center gap-2 px-5 py-2.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:bg-teal-300">
+                        {isSaving && <Loader2 size={18} className="animate-spin" />}
+                        <Save size={18} />
+                        Salvar e Mover para Expedição
+                    </button>
                 </div>
             </div>
         </div>

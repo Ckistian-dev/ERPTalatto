@@ -1,9 +1,10 @@
 // /pages/Listapedidos.jsx
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import { FaFileCsv, FaTable, FaFilter, FaEye, FaCheckCircle } from 'react-icons/fa';
 import { toast } from 'react-toastify';
+import { Loader2 } from 'lucide-react'; // Ícone de carregamento
 
 // Seus imports de componentes
 import ModalErro from '@/components/modals/ModalErro';
@@ -13,6 +14,7 @@ import ModalEditarTabela from '@/components/modals/ModalEditarTabela';
 import ModalVisualizarPedido from '@/components/modals/ModalVisualizarPedido';
 import ModalFaturarPedido from '@/components/modals/ModalFaturarPedido';
 import { useAuth } from '@/context/AuthContext';
+import { useNfeStatusPoller } from '@/hooks/useNfeStatusPoller'; // <-- IMPORTA O HOOK
 
 const API_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -21,7 +23,7 @@ export default function Listapedidos() {
     const [pedidos, setPedidos] = useState([]);
     const [pedidoSelecionado, setPedidoSelecionado] = useState(null);
 
-    // Estados de UI e Modais
+    // ... (outros estados permanecem os mesmos) ...
     const { usuario } = useAuth();
     const [mensagemErro, setMensagemErro] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -29,13 +31,9 @@ export default function Listapedidos() {
     const [mostrarModalVisualizar, setMostrarModalVisualizar] = useState(false);
     const [mostrarFiltroColunas, setMostrarFiltroColunas] = useState(false);
     const [mostrarEditarTabela, setMostrarEditarTabela] = useState(false);
-
-    // Estados para paginação
     const [paginaAtual, setPaginaAtual] = useState(1);
     const itensPorPagina = 15;
     const [totalPaginas, setTotalPaginas] = useState(1);
-
-    // Estados para customização da tabela (filtros, colunas, ordenação)
     const [colunasVisiveis, setColunasVisiveis] = useState([]);
     const [todasColunas, setTodasColunas] = useState([]);
     const [dataInicio, setDataInicio] = useState('');
@@ -47,14 +45,66 @@ export default function Listapedidos() {
     const [ordenacaoColuna, setOrdenacaoColuna] = useState('data_emissao');
     const [ordenacaoAscendente, setOrdenacaoAscendente] = useState(false);
 
-    // Função para buscar os pedidos
+
+    // Função para atualizar um pedido no estado local da UI
+    const atualizarPedidoLocalmente = useCallback((pedidoId, alteracoes) => {
+        setPedidos(pedidosAnteriores =>
+            pedidosAnteriores.map(p =>
+                p.id === pedidoId ? { ...p, ...alteracoes } : p
+            )
+        );
+        if (pedidoSelecionado?.id === pedidoId) {
+            setPedidoSelecionado(prev => ({ ...prev, ...alteracoes }));
+        }
+    }, [pedidoSelecionado]);
+
+
+    // --- INTEGRAÇÃO DO POLLING ---
+    const { startPolling, isPollingFor } = useNfeStatusPoller({
+        API_URL,
+        onSuccess: (pedidoId, dadosApi) => {
+            // Atualiza o pedido com os dados finais da NF-e autorizada
+            atualizarPedidoLocalmente(pedidoId, {
+                nfe_status: 'autorizado',
+                numero_nf: dadosApi.numero,
+                serie_nfe: dadosApi.serie,
+                nfe_chave: dadosApi.chave_nfe,
+                nfe_protocolo: dadosApi.protocolo,
+                nfe_danfe_path: dadosApi.caminho_danfe,
+                nfe_xml_path: dadosApi.caminho_xml_nfe,
+                data_nf: new Date().toISOString(),
+            });
+        },
+        onError: (pedidoId, alteracoes) => {
+            // Atualiza o pedido com o status de erro
+            atualizarPedidoLocalmente(pedidoId, alteracoes);
+        }
+    });
+
+    // Inicia o polling para pedidos que já estão em processamento ao carregar a página
+    useEffect(() => {
+        pedidos.forEach(p => {
+            if (p.nfe_status === 'processando_autorizacao' && !isPollingFor(p.id)) {
+                startPolling(p.id);
+            }
+        });
+    }, [pedidos, startPolling, isPollingFor]);
+
+
+    // Callback para quando a NF-e é enviada para processamento
+    const handleNfeProcessando = ({ pedido_id, ...dadosNfe }) => {
+        atualizarPedidoLocalmente(pedido_id, dadosNfe);
+        startPolling(pedido_id); // Inicia a consulta periódica
+    };
+
+    // ... (O restante das suas funções como buscarPedidos, handleConfirmarFaturamento, etc., permanecem as mesmas) ...
     const buscarPedidos = async () => {
         setLoading(true);
         try {
             const filtrosStr = [
                 ...filtrosSelecionados.map(f => `${f.coluna}:${f.texto}`),
                 `situacao_pedido:Faturamento`,
-                `situacao_pedido:Em processamento (NF-e)`,
+                `situacao_pedido:Em Processamento (NF-e)`,
                 `situacao_pedido:Rejeitado`
             ].join(';');
 
@@ -79,27 +129,8 @@ export default function Listapedidos() {
             setLoading(false);
         }
     };
-
-    // Função para atualizar um pedido no estado local da UI
-    const atualizarPedidoLocalmente = (pedidoId, alteracoes) => {
-        setPedidos(pedidosAnteriores =>
-            pedidosAnteriores.map(p =>
-                p.id === pedidoId ? { ...p, ...alteracoes } : p
-            )
-        );
-        if (pedidoSelecionado?.id === pedidoId) {
-            setPedidoSelecionado(prev => ({ ...prev, ...alteracoes }));
-        }
-    };
-
-    // Callback para quando a NF-e é enviada para processamento
-    const handleNfeProcessando = ({ pedido_id, ...dadosNfe }) => {
-        atualizarPedidoLocalmente(pedido_id, dadosNfe);
-    };
-
-    // Callback para confirmar o faturamento e mover para expedição
     const handleConfirmarFaturamento = async () => {
-        if (!pedidoSelecionado || pedidoSelecionado.nfe_status !== 'AUTORIZADO') {
+        if (!pedidoSelecionado || pedidoSelecionado.nfe_status !== 'autorizado') {
             toast.warn("Apenas pedidos com NF-e AUTORIZADA podem ser movidos.");
             return;
         }
@@ -113,8 +144,6 @@ export default function Listapedidos() {
             toast.error("Erro ao confirmar faturamento do pedido.");
         }
     };
-
-    // Função para exportar os dados da tabela para um arquivo CSV
     const exportarCSV = () => {
         if (pedidos.length === 0) {
             toast.warn("Não há dados para exportar.");
@@ -142,8 +171,6 @@ export default function Listapedidos() {
         link.click();
         document.body.removeChild(link);
     };
-
-    // Função para formatar campos complexos para exibição na tabela
     const formatarCampo = (valor, coluna) => {
         if (valor === null || valor === undefined) return '';
         if (["lista_itens", "formas_pagamento", "endereco_expedicao"].includes(coluna)) {
@@ -156,7 +183,6 @@ export default function Listapedidos() {
         }
         return String(valor);
     };
-
     const handleAplicarFiltros = ({ filtros, data_inicio, data_fim }) => {
         setFiltrosSelecionados(filtros || []);
         setDataInicio(data_inicio || '');
@@ -164,52 +190,26 @@ export default function Listapedidos() {
         setPaginaAtual(1);
         setMostrarFiltroColunas(false);
     };
-
-    // Efeitos para inicialização e busca de dados
     useEffect(() => {
         if (usuario) {
             const ordemPadrao = [
-                "id",
-                "situacao_pedido",
-                "data_emissao",
-                "data_validade",
-                "cliente_id",
-                "cliente_nome",
-                "vendedor_id",
-                "vendedor_nome",
-                "origem_venda",
-                "tipo_frete",
-                "transportadora_id",
-                "transportadora_nome",
-                "valor_frete",
-                "total",
-                "desconto_total",
-                "total_com_desconto",
-                "lista_itens",
-                "formas_pagamento",
-                "observacao",
-                "criado_em",
-                "data_finalizacao",
-                "ordem_finalizacao",
-                "endereco_expedicao",
-                "hora_expedicao",
-                "usuario_expedicao",
-                "numero_nf",
-                "data_nf"
+                "id", "situacao_pedido","nfe_status", "data_emissao", "cliente_nome",
+                "vendedor_nome", "origem_venda",
+                "transportadora_nome", "valor_frete", "total", "desconto_total", "total_com_desconto",
+                "lista_itens", "formas_pagamento", "observacao", "criado_em", "data_finalizacao",
+                "ordem_finalizacao", "endereco_expedicao", "hora_expedicao", "usuario_expedicao",
+                "numero_nf", "data_nf" 
             ];
-            setTodasColunas(ordemPadrao); // Simplificado para este contexto
+            setTodasColunas(ordemPadrao);
             setColunasVisiveis(usuario.colunas_visiveis_pedidos || ordemPadrao);
         }
     }, [usuario]);
-
     useEffect(() => {
         if (colunasVisiveis.length > 0) {
             buscarPedidos();
         }
     }, [paginaAtual, filtrosSelecionados, filtroRapidoTexto, dataInicio, dataFim, ordenacaoColuna, ordenacaoAscendente, colunasVisiveis]);
-
     const colunasDropdownEditavel = { situacao_pedido: "situacao_pedido", origem_venda: "origem_venda", tipo_frete: "tipo_frete", condicao_pagamento: "condicao_pagamento" };
-
     useEffect(() => {
         const tipo = colunasDropdownEditavel[filtroRapidoColuna];
         if (tipo && !opcoesDropdown[filtroRapidoColuna]) {
@@ -219,10 +219,12 @@ export default function Listapedidos() {
         }
     }, [filtroRapidoColuna]);
 
+
     return (
         <div className="p-6">
             <div className="w-auto overflow-auto">
                 <div className="flex flex-wrap justify-between items-center mb-4 gap-2">
+                    {/* ... Seus botões de ação ... */}
                     <div className="flex gap-2 flex-wrap">
                         <ButtonComPermissao type="button" onClick={exportarCSV} permissoes={["admin"]} className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded flex items-center gap-2">
                             <FaFileCsv />Exportar CSV
@@ -263,35 +265,40 @@ export default function Listapedidos() {
                                 {loading ? (
                                     <tr><td colSpan={colunasVisiveis.length} className="text-center py-10">Carregando...</td></tr>
                                 ) : pedidos.length === 0 ? (
-                                    <tr><td colSpan={colunasVisiveis.length}><div className="flex items-center pl-[63vh] h-[63vh]"><span className="text-gray-500 text-lg">Nenhum pedido encontrado.</span></div></td></tr>
+                                    <tr><td colSpan={colunasVisiveis.length}><div className="flex items-center justify-center h-[63vh]"><span className="text-gray-500 text-lg">Nenhum pedido encontrado.</span></div></td></tr>
                                 ) : (
-                                    <>
-                                        {pedidos.map((pedido) => (
-                                            <tr key={pedido.id} onClick={() => setPedidoSelecionado(pedido)} className={`cursor-pointer ${pedidoSelecionado?.id === pedido.id ? 'bg-blue-100' : 'hover:bg-gray-50'}`}>
-                                                {colunasVisiveis.map((coluna) => (
-                                                    <td key={coluna} className="p-2 border whitespace-nowrap text-sm">
-                                                        {coluna === 'nfe_status' ? (
-                                                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${pedido.nfe_status === 'AUTORIZADO' ? 'bg-green-100 text-green-800' :
-                                                                pedido.nfe_status === 'REJEITADO' ? 'bg-red-100 text-red-800' :
-                                                                    pedido.nfe_status === 'PROCESSANDO' ? 'bg-yellow-100 text-yellow-800' :
-                                                                        'bg-gray-100 text-gray-800'
-                                                                }`}>
-                                                                {pedido.nfe_status || 'N/A'}
-                                                            </span>
-                                                        ) : (
-                                                            formatarCampo(pedido[coluna], coluna)
-                                                        )}
-                                                    </td>
-                                                ))}
-                                            </tr>
-                                        ))}
-                                        {pedidos.length < itensPorPagina && Array.from({ length: itensPorPagina - pedidos.length }).map((_, idx) => (
-                                            <tr key={`espaco-${idx}`} className="opacity-0 pointer-events-none select-none">
-                                                {colunasVisiveis.map((_, i) => (<td key={i} className="p-2 whitespace-nowrap">&nbsp;</td>))}
-                                            </tr>
-                                        ))}
-                                    </>
+                                    pedidos.map((pedido) => (
+                                        <tr key={pedido.id} onClick={() => setPedidoSelecionado(pedido)} className={`cursor-pointer ${pedidoSelecionado?.id === pedido.id ? 'bg-blue-100' : 'hover:bg-gray-50'}`}>
+                                            {colunasVisiveis.map((coluna) => (
+                                                <td key={coluna} className="p-2 border whitespace-nowrap text-sm">
+                                                    {coluna === 'nfe_status' ? (
+                                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${{
+                                                                'autorizado': 'bg-green-100 text-green-800',
+                                                                'erro_autorizacao': 'bg-red-100 text-red-800',
+                                                                'processando_autorizacao': 'bg-yellow-100 text-yellow-800',
+                                                            }[pedido.nfe_status] || 'bg-gray-100 text-gray-800'
+                                                            }`}>
+                                                            {isPollingFor(pedido.id) && <Loader2 size={12} className="animate-spin mr-1" />}
+                                                            {pedido.nfe_status || 'N/A'}
+                                                        </span>
+                                                    ) : (
+                                                        formatarCampo(pedido[coluna], coluna)
+                                                    )}
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    ))
                                 )}
+                                {/* Preenche espaço visual com linhas invisíveis */}
+                                {pedidos.length < 15 &&
+                                    Array.from({ length: 15 - pedidos.length }).map((_, idx) => (
+                                        <tr key={`espaco-${idx}`} className="opacity-0 pointer-events-none select-none">
+                                            {colunasVisiveis.map((_, i) => (
+                                                <td key={i} className="p-2 whitespace-nowrap">&nbsp;</td>
+                                            ))}
+                                        </tr>
+                                    ))
+                                }
                             </tbody>
                         </table>
                     </div>

@@ -185,8 +185,7 @@ class TrayAPIService:
     # ===================================================================
     # MÉTODOS PARA PEDIDOS
     # ===================================================================
-    async def get_recent_orders(self, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
-        page = (offset // limit) + 1
+    async def get_recent_orders(self, limit: int = 50, page: int = 1) -> Dict[str, Any]:
         params = {
             "limit": limit,
             "page": page,

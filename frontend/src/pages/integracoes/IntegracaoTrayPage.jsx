@@ -327,28 +327,6 @@ const AbaConfiguracoesTray = () => {
                     </div>
                 </div>
 
-                {/* --- NOVA SEÇÃO PARA INFORMAÇÕES DA LOJA --- */}
-                <div className="p-6 bg-white border rounded-lg shadow-sm">
-                    <h3 className="text-lg font-semibold mb-4 text-gray-800">Informações da Loja</h3>
-                    <p className="text-sm text-gray-500 mb-4">Estes dados serão exibidos na tela de "Visão Geral" da integração.</p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <CampoTextsimples
-                            label="Nome da Loja"
-                            name="store_name"
-                            value={form.store_name || ''}
-                            onChange={handleChange}
-                            placeholder="Ex: Minha Loja de Calçados"
-                        />
-                        <CampoTextsimples
-                            label="E-mail de Contato da Loja"
-                            name="store_email"
-                            value={form.store_email || ''}
-                            onChange={handleChange}
-                            placeholder="Ex: contato@minhaloja.com"
-                        />
-                    </div>
-                </div>
-
                 <div className="flex justify-end gap-4 mt-6">
                     <ButtonComPermissao
                         permissoes={["admin"]}

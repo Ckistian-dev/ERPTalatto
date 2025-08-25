@@ -6,6 +6,7 @@ import { FaPlug, FaUnlink, FaCog, FaCalculator, FaTruck, FaMapMarkerAlt, FaSave,
 import CampoImportarOrcamento from "@/components/campos/CampoImportarOrcamento";
 import ButtonComPermissao from "@/components/buttons/ButtonComPermissao";
 import CampoTextsimples from "@/components/campos/CampoTextsimples";
+import CampoSenha from "@/components/campos/CampoSenha";
 
 const API_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -528,7 +529,7 @@ const AbaConfiguracoes = ({ onConfigUpdate }) => {
                 <div className="p-6 bg-white border rounded-lg shadow-sm">
                     <h3 className="text-lg font-semibold mb-4 text-gray-800">Credenciais</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <CampoTextsimples
+                        <CampoSenha
                             label="API Key" name="api_key" value={form.api_key || ''}
                             onChange={handleChange} placeholder="Sua chave de API" type="password" required
                         />

@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
+from models.produtos_model import Produto
 
 from config.database import get_db
-from models.estoque_model import EstoquePosicao, Produto
+from models.estoque_model import EstoquePosicao
 from schemas.estoque_schema import (
     EntradaCreate, SaidaCreate, EstoquePosicaoResponse, 
     EstoquePosicaoConsolidadaResponse, ProdutoSearchResponse, ReservaPayload

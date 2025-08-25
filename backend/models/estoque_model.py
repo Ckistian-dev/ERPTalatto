@@ -3,12 +3,6 @@ from sqlalchemy import (Column, Integer, String, DateTime, func, DECIMAL,
 from sqlalchemy.orm import relationship
 from config.database import Base
 
-class Produto(Base):
-    __tablename__ = "produtos"
-    id = Column(Integer, primary_key=True, index=True)
-    descricao = Column(String(255), nullable=False)
-    posicoes_estoque = relationship("EstoquePosicao", back_populates="produto")
-
 class EstoquePosicao(Base):
     __tablename__ = "estoque"
     id_produto = Column(Integer, ForeignKey("produtos.id"), primary_key=True)

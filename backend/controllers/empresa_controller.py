@@ -12,9 +12,9 @@ from typing import Optional
 # ==================================
 class InfoEmpresa(Base):
     """
-    Modelo de dados para armazenar as informações e credenciais da empresa.
+    Modelo de dados simplificado para armazenar as informações da empresa.
     """
-    __tablename__ = "focus_configuracoes"
+    __tablename__ = "empresa_configuracoes" # <-- Nome da tabela atualizado
     id = Column(Integer, primary_key=True, index=True)
     
     # Dados da Empresa
@@ -29,13 +29,15 @@ class InfoEmpresa(Base):
     cidade = Column(String(100), nullable=True)
     uf = Column(String(2), nullable=True)
     cep = Column(String(8), nullable=True)
+    codigo_municipio_ibge = Column(String(7), nullable=True)
     
-    # Configurações de Emissão Webmania
+    # Configurações Fiscais Essenciais
+    crt = Column(Integer, nullable=True)
     emissao_em_producao = Column(Boolean, default=False)
-    webmania_consumer_key = Column(String(255), nullable=True)
-    webmania_consumer_secret = Column(String(255), nullable=True)
-    webmania_access_token = Column(String(255), nullable=True)
-    webmania_access_token_secret = Column(String(255), nullable=True)
+    
+    # CFOPs Padrão (úteis para o XML)
+    cfop_interno = Column(String(4), nullable=True)
+    cfop_interestadual = Column(String(4), nullable=True)
     
     # Timestamps
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
@@ -46,7 +48,7 @@ class InfoEmpresa(Base):
 # ==================================
 class InfoEmpresaSchema(BaseModel):
     """
-    Schema Pydantic para validação e serialização dos dados da empresa.
+    Schema Pydantic simplificado para os dados da empresa.
     """
     cnpj: Optional[str] = Field(None, max_length=14)
     razao_social: Optional[str] = None
@@ -59,13 +61,11 @@ class InfoEmpresaSchema(BaseModel):
     cidade: Optional[str] = None
     uf: Optional[str] = None
     cep: Optional[str] = Field(None, max_length=8)
-    
-    # Campos Webmania
+    codigo_municipio_ibge: Optional[str] = Field(None, max_length=7)
+    crt: Optional[int] = None
     emissao_em_producao: Optional[bool] = False
-    webmania_consumer_key: Optional[str] = None
-    webmania_consumer_secret: Optional[str] = None
-    webmania_access_token: Optional[str] = None
-    webmania_access_token_secret: Optional[str] = None
+    cfop_interno: Optional[str] = Field(None, max_length=4)
+    cfop_interestadual: Optional[str] = Field(None, max_length=4)
 
     class Config:
         from_attributes = True
@@ -80,7 +80,6 @@ def get_info_empresa(db: Session = Depends(get_db)):
     """Busca a configuração atual da empresa no banco de dados."""
     config = db.query(InfoEmpresa).first()
     if not config:
-        # Para evitar erros na primeira vez, podemos criar um registro padrão
         config = InfoEmpresa(id=1)
         db.add(config)
         db.commit()
@@ -89,12 +88,11 @@ def get_info_empresa(db: Session = Depends(get_db)):
 
 @router.put("", response_model=InfoEmpresaSchema)
 def update_info_empresa(config_update: InfoEmpresaSchema, db: Session = Depends(get_db)):
-    """Atualiza as informações e credenciais da empresa."""
+    """Atualiza as informações da empresa."""
     db_config = db.query(InfoEmpresa).first()
     if not db_config:
-        raise HTTPException(status_code=404, detail="Informações da empresa não encontradas para atualizar.")
-
-    # CORREÇÃO: .dict() foi substituído por .model_dump(), que é o método atual do Pydantic.
+        raise HTTPException(status_code=404, detail="Informações da empresa não encontradas.")
+    
     update_data = config_update.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(db_config, key, value if value is not None else None)

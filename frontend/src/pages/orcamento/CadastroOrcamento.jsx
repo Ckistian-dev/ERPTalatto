@@ -76,23 +76,34 @@ export default function CadastroOrçamento({ modo = "novo" }) {
     }, [modo, location]);
 
     useEffect(() => {
-        const produtoId = form.produto_selecionado;
-        if (!produtoId) {
-            setPrecosDisponiveis([]);
-            return;
-        }
+        const fetchAllPrices = async () => {
+            const productIdsToFetch = new Set();
+            itens.forEach(item => {
+                if (item.produto_id) productIdsToFetch.add(item.produto_id);
+            });
+            if (form.produto_selecionado) {
+                productIdsToFetch.add(form.produto_selecionado);
+            }
 
-        const fetchPrecoDoProduto = async () => {
-            try {
-                const res = await axios.get(`${API_URL}/tabela_precos_por_produto?produto_id=${produtoId}`);
-                setPrecosDisponiveis(res.data || []);
-            } catch (error) {
-                toast.error(`Erro ao carregar a tabela de preços do produto.`);
+            if (productIdsToFetch.size === 0) {
                 setPrecosDisponiveis([]);
+                return;
+            }
+
+            try {
+                const pricePromises = Array.from(productIdsToFetch).map(id =>
+                    axios.get(`${API_URL}/tabela_precos_por_produto?produto_id=${id}`)
+                );
+                const responses = await Promise.all(pricePromises);
+                const allPriceConfigs = responses.flatMap(res => res.data || []);
+                setPrecosDisponiveis(allPriceConfigs);
+            } catch (error) {
+                console.error("Erro ao buscar preços dos produtos:", error);
+                toast.error("Não foi possível carregar as configurações de preço.");
             }
         };
-        fetchPrecoDoProduto();
-    }, [form.produto_selecionado]);
+        fetchAllPrices();
+    }, [itens, form.produto_selecionado]);
 
     useEffect(() => {
         const totalProdutos = Number(form.total) || 0;
