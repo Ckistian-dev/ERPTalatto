@@ -34,6 +34,7 @@ class Cadastro(Base):
     codigo_pais = Column(String(4), default='1058')
     indicador_ie = Column(String(1), default='9')
     situacao = Column(String(20), default='Ativo', nullable=False)
+    regiao = Column(String(60))
     
     # --- Campo novo adicionado ---
     is_consumidor_final = Column(Boolean, default=True)

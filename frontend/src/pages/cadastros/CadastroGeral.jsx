@@ -115,7 +115,7 @@ export default function CadastroGeral({ modo = 'novo' }) {
         } finally {
             setIsCepLoading(false);
         }
-    }, [isCepLoading]);
+    }, []);
 
     const preencherDadosPorCNPJ = useCallback(async (cnpj) => {
         const cnpjLimpo = (cnpj || '').replace(/\D/g, '');
