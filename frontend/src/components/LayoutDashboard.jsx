@@ -29,7 +29,7 @@ export default function LayoutDashboard() {
       '/cadastros/novo': 'geral',
       '/produtos': 'listagem',
       '/embalagem': 'listagem',
-      '/usuario': 'listagem',
+      '/usuarios': 'listagem',
       '/embalagem/novo': 'geral',
       '/usuario/novo': 'geral',
       '/produtos/novo': 'geral',
@@ -84,7 +84,7 @@ export default function LayoutDashboard() {
             <SidebarItem icone={<FaUserFriends />} titulo="Cadastros" aberto={menuAberto === 'geral'} toggle={() => toggleMenu('geral')} submenu={["Geral", "Produtos", "Usuários", "Embalagem"]} sidebarAberta={sidebarAberta} links={["/cadastros/novo", "/produtos/novo", "/usuario/novo", "/embalagem/novo"]} location={location} />
           )}
           {verificarPermissao(usuario, ['admin', 'vendedor', 'financeiro', 'visitante']) && (
-            <SidebarItem icone={<FaBoxOpen />} titulo="Listagem" aberto={menuAberto === 'listagem'} toggle={() => toggleMenu('listagem')} submenu={["Cadastros", "Produtos", "Usuários", "Embalagens"]} sidebarAberta={sidebarAberta} links={["/cadastros", "/produtos", "/usuario", "/embalagem"]} location={location} exclude={['/cadastros/novo', '/produtos/novo', "/usuario/novo", '/embalagem/novo']} />
+            <SidebarItem icone={<FaBoxOpen />} titulo="Listagem" aberto={menuAberto === 'listagem'} toggle={() => toggleMenu('listagem')} submenu={["Cadastros", "Produtos", "Usuários", "Embalagens"]} sidebarAberta={sidebarAberta} links={["/cadastros", "/produtos", "/usuarios", "/embalagem"]} location={location} exclude={['/cadastros/novo', '/produtos/novo', "/usuario/novo", '/embalagem/novo']} />
           )}
           {verificarPermissao(usuario, ['admin', 'vendedor', 'visitante']) && (
             <SidebarItem icone={<FaFileInvoiceDollar />} titulo="Orçamentos" aberto={menuAberto === 'orcamentos'} toggle={() => toggleMenu('orcamentos')} submenu={["Novo Orçamento", "Histórico"]} sidebarAberta={sidebarAberta} links={["/orcamentos/novo", "/orcamentos"]} location={location} />
