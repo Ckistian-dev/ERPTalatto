@@ -84,7 +84,7 @@ function App() {
             <Route path="/embalagem" element={<ListaLogicasEmbalagem />} />
             <Route path="/usuario/novo" element={<CadastroUsuario />} />
             <Route path="/usuario/editar" element={<CadastroUsuario modo="editar" />} />
-            <Route path="/usuario" element={<ListaUsuarios />} />
+            <Route path="/usuarios" element={<ListaUsuarios />} />
             <Route path="/integracoes/sebrae" element={<IntegracaoSebraePage />} />
             <Route path="/integracoes/mercadolivre" element={<IntegracaoMercadoLivrePage />} />
             <Route path="/integracoes/tray" element={<IntegracaoTrayPage />} />
