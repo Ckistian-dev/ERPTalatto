@@ -349,7 +349,7 @@ export default function Listacontas({ filtro }) {
                 <div className="flex flex-wrap justify-between items-center mb-4 gap-2">
                     <div className="flex gap-2 flex-wrap">
                         {/* Botão de nova conta */}
-                        <Link to="/contas/novo" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded flex items-center gap-2">
+                        <Link to="/financeiro/criar" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded flex items-center gap-2">
                             <FaUserPlus /> Novo
                         </Link>
 
