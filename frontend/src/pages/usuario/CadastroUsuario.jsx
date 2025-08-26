@@ -117,7 +117,7 @@ export default function CadastroUsuario({ modo = 'novo' }) {
     return (
         <div className="max-w-6xl mx-auto p-4 sm:p-6 pb-28">
             <h1 className="text-2xl sm:text-3xl font-bold mb-6 text-gray-800">
-                {modo === 'editar' ? `Editar Usuário: ${usuarioEdicao?.nome || ''}` : 'Novo Cadastro de Usuário'}
+                {modo === 'editar' ? `Editar Usuário: ${usuarioEdicao?.nome || ''}` : 'Novo Cadastro de Usuário - v2'}
             </h1>
             
             <div className="flex flex-wrap gap-1 border-b border-gray-300 mb-6">{/* ... abas ... */}</div>
