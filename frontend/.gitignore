@@ -20,7 +20,7 @@ node_modules
 # Cache do Python
 __pycache__/
 
-# Pastas de certificados (mantendo a sua regra)
+# Pastas de certificados
 certificados/
 
 # Editor directories and files
@@ -34,6 +34,7 @@ certificados/
 *.sln
 *.sw?
 
-# Pastas temporárias que vi na sua imagem
+# Pastas temporárias e de modelos
 .tmp.drivedownload/
 .tmp.driveupload/
+"Modelos DB"/
