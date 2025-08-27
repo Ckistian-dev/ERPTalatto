@@ -50,19 +50,19 @@ app = FastAPI(
 )
 
 # Configuração do estado e do handler usando o limiter importado
-# app.state.limiter = limiter
-# app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 # --- Middlewares ---
-# app.add_middleware(GZipMiddleware, minimum_size=500)
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 origins_str = os.getenv("FRONTEND_URLS", "http://localhost:5173")
 allowed_origins = [origin.strip() for origin in origins_str.split(',')]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
