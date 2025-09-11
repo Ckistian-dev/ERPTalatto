@@ -224,13 +224,19 @@ export default function ModalProgramacaoPedido({ pedido, onClose, onConfirmar })
                 }
             }
         }
+        
+        // =======================================================================
+        // AQUI ESTÁ A NOVA LÓGICA
+        // =======================================================================
+        // Determina a situação do pedido dinamicamente com base nas ordens de produção.
+        const situacaoPedidoFinal = ordens_producao.length === 0 ? "Embalagem" : "Produção";
 
-        // ✅ PAYLOAD FINAL COM O NOME E ESTRUTURA CORRIGIDOS
         const payload = {
             data_finalizacao: dataFinalizacao,
             ordem_finalizacao: ordemFinalizacao,
-            situacao_pedido: "Produção",
-            programacao: { // Nome do campo alterado para 'programacao'
+            // Utiliza a variável para definir a situação correta do pedido
+            situacao_pedido: situacaoPedidoFinal,
+            programacao: { 
                 data_programacao: new Date().toISOString(),
                 retiradas_estoque,
                 ordens_producao

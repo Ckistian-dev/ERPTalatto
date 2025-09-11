@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import axios from 'axios'
-import { FaFileCsv, FaTable, FaFilter, FaEye, FaCheckCircle, FaTimesCircle } from 'react-icons/fa'
+import { FaFileCsv, FaTable, FaFilter, FaEye, FaCheckCircle, FaTimesCircle, FaClipboardList } from 'react-icons/fa'
 
 import { toast } from 'react-toastify'
 
@@ -9,6 +9,7 @@ import ModalFiltroColunas from '@/components/modals/ModalFiltroColunas'
 import ButtonComPermissao from "@/components/buttons/ButtonComPermissao";
 import ModalEditarTabela from '@/components/modals/ModalEditarTabela'
 import ModalVisualizarPedido from '@/components/modals/ModalVisualizarPedido'
+import ModalVisualizarItensProgramados from '@/components/modals/ModalVisualizarItensProgramados'
 
 
 import { useAuth } from '@/context/AuthContext'
@@ -51,8 +52,9 @@ export default function Listapedidos() {
         setMensagemErro(mensagem);
     };
 
-    // Visualizar
+    // Modais
     const [mostrarModalVisualizar, setMostrarModalVisualizar] = useState(false)
+    const [mostrarModalItens, setMostrarModalItens] = useState(false);
 
 
     // Buscar pedidos ao montar
@@ -475,6 +477,15 @@ export default function Listapedidos() {
                             Visualizar
                         </button>
 
+                        {/* Botão Itens Programação */}
+                        <button
+                            onClick={() => {
+                                if (!pedidoSelecionado) return exibirAviso("Selecione um pedido!");
+                                setMostrarModalItens(true);
+                            }}
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center gap-2">
+                            <FaClipboardList /> Itens
+                        </button>
 
                         {/* Botão Finalizar */}
                         <button
@@ -617,6 +628,13 @@ export default function Listapedidos() {
                 <ModalVisualizarPedido
                     pedido={pedidoSelecionado}
                     onClose={() => setMostrarModalVisualizar(false)}
+                />
+            )}
+
+            {mostrarModalItens && (
+                <ModalVisualizarItensProgramados
+                    pedido={pedidoSelecionado}
+                    onClose={() => setMostrarModalItens(false)}
                 />
             )}
         </div>

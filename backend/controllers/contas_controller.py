@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, EmailStr
 from fastapi import status
 from typing import Optional, List
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import os
 import traceback
@@ -164,9 +164,9 @@ def criar_conta(conta: ContaCreate):
                 valor_conta_atual = forma_pgto_item.valor_parcela
                 
                 for i in range(1, forma_pgto_item.parcelas + 1):
-                    # 2. Calcular a data da parcela usando o objeto date
-                    data_vencimento_parcela_obj = data_vencimento_base_obj + relativedelta(months=i-1)
-                    # 3. Formatar a data da parcela para string DD/MM/YYYY para o banco
+                    # ✅ ALTERAÇÃO: Vencimento a cada 28 dias, em vez de mês a mês.
+                    data_vencimento_parcela_obj = data_vencimento_base_obj + timedelta(days=(i-1) * 28)
+                    
                     data_vencimento_final_str_db = data_vencimento_parcela_obj.strftime("%d/%m/%Y")
                     forma_pagamento_db = f"Parcelamento {i}/{forma_pgto_item.parcelas}"
                     
@@ -188,25 +188,17 @@ def criar_conta(conta: ContaCreate):
                     valor_conta_atual = forma_pgto_item.valor_dinheiro
                 elif forma_pgto_item.tipo == "Boleto" and forma_pgto_item.valor_boleto is not None:
                     valor_conta_atual = forma_pgto_item.valor_boleto
-                # Adicione outras condições de tipo de pagamento se necessário
                 else:
-                    # Se nenhum valor específico do tipo for encontrado, ou se o tipo não for esperado.
-                    # Você pode querer um valor padrão ou levantar um erro.
-                    # Por enquanto, vou assumir que se não for parcelamento e não tiver valor específico,
-                    # o valor_conta_atual permanece 0.0 ou você pode levantar um erro.
                     raise HTTPException(status_code=400, detail=f"Valor não especificado para o tipo de pagamento: {forma_pgto_item.tipo}")
 
-
-                if valor_conta_atual <= 0 and forma_pgto_item.tipo not in ["Parcelamento"]: # Parcelamento já validado
-                    # Opcional: Lançar erro se o valor for zero ou negativo para pagamentos únicos.
-                    # raise HTTPException(status_code=400, detail=f"Valor inválido ou não fornecido para o tipo '{forma_pgto_item.tipo}'.")
+                if valor_conta_atual <= 0:
                     pass
-
 
                 values = (
                     conta.tipo_conta, conta.situacao_conta, conta.descricao_conta,
                     conta.num_conta, conta.id_cliente_fornecedor, conta.nome_cliente_fornecedor,
-                    conta.data_emissao, conta.data_vencimento, conta.data_baixa, # Data de vencimento original para pagamentos não parcelados
+                    # ✅ ALTERAÇÃO: Vencimento no mesmo dia da emissão para pagamentos únicos.
+                    conta.data_emissao, conta.data_emissao, conta.data_baixa, 
                     conta.plano_contas, conta.caixa_destino_origem, conta.observacoes_conta,
                     forma_pagamento_db, valor_conta_atual,
                     datetime.now(), datetime.now()
@@ -217,19 +209,15 @@ def criar_conta(conta: ContaCreate):
         conn.commit()
 
         if conta_id_para_retorno is None:
-            # Isso não deveria acontecer se formas_pagamento não for vazia e houver inserções.
             raise HTTPException(status_code=500, detail="Nenhuma conta foi criada, erro interno.")
 
-        # Retornar os dados da última conta inserida (ou da primeira, se preferir ajustar a lógica)
         cursor.execute("SELECT *, DATE_FORMAT(criado_em, '%Y-%m-%dT%H:%i:%S') as criado_em_str FROM contas WHERE id = %s", (conta_id_para_retorno,))
         novo_conta_db_dict = cursor.fetchone()
 
         if novo_conta_db_dict is None:
             raise HTTPException(status_code=404, detail="Conta criada mas não encontrada para retorno.")
         
-        # Ajuste para o nome do campo formatado se ContaResponse espera 'criado_em'
         novo_conta_db_dict['criado_em'] = novo_conta_db_dict.pop('criado_em_str')
-
 
         return ContaResponse(**novo_conta_db_dict)
 
@@ -240,8 +228,8 @@ def criar_conta(conta: ContaCreate):
         print(f"Erro de banco de dados: {err}")
         print(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Erro no servidor ao criar conta: " + str(err))
-    except HTTPException as http_exc: # Repassar HTTPExceptions customizadas
-        if conn: conn.rollback() # Rollback também em erros de validação que ocorrem antes do commit
+    except HTTPException as http_exc:
+        if conn: conn.rollback()
         raise http_exc
     except Exception as e:
         if conn: conn.rollback()
