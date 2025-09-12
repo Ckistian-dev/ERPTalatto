@@ -36,7 +36,6 @@ const KpiCard = ({ icon, title, value, footer }) => (
 const ChartContainer = ({ title, data, children, className = '' }) => (
   <div className={`bg-white shadow-lg rounded-xl p-6 h-full ${className}`}>
     <h2 className="text-xl font-semibold text-gray-700 mb-4">{title}</h2>
-    {/* Adicionamos uma verificação: só renderiza o gráfico se houver dados */}
     {data && data.length > 0 ? (
       <ResponsiveContainer width="100%" height={350}>
         {children}
@@ -63,14 +62,13 @@ const VisaoGeralTab = ({ kpis, vendasData }) => (
       <KpiCard icon={<TrendingDown className="w-8 h-8 text-red-500"/>} title="A Receber Vencido" value={formatCurrency(kpis.contasVencidas)} footer="Total acumulado"/>
     </div>
     
-    <ChartContainer title="Evolução de Faturamento vs. Custo (12 Meses)" data={vendasData.evolucaoFaturamentoCusto}>
-      <ComposedChart data={vendasData.evolucaoFaturamentoCusto} margin={{ top: 5, right: 20, left: 30, bottom: 5 }}>
+    <ChartContainer title="Evolução de Faturamento vs. Custo (12 Meses)" data={vendasData?.evolucaoFaturamentoCusto}>
+      <ComposedChart data={vendasData?.evolucaoFaturamentoCusto} margin={{ top: 5, right: 20, left: 30, bottom: 5 }}>
         <CartesianGrid strokeDasharray="3 3" />
         <XAxis dataKey="mes" />
         <YAxis tickFormatter={(val) => `R$${val/1000}k`} />
         <Tooltip formatter={(value) => formatCurrency(value)} />
         <Legend />
-        {/* As chaves agora são minúsculas para combinar com a API */}
         <Area type="monotone" dataKey="faturamento" fill="#8884d8" stroke="#8884d8" fillOpacity={0.2} name="Faturamento" />
         <Line type="monotone" dataKey="custo" stroke="#ff7300" strokeWidth={2} name="Custo" />
       </ComposedChart>
@@ -92,7 +90,8 @@ const AnaliseVendasTab = ({ vendasData }) => (
                     <YAxis dataKey="nome" type="category" width={100} tick={{fontSize: 12}}/>
                     <Tooltip formatter={(value) => formatCurrency(value)} />
                     <Bar dataKey="faturamento" name="Faturamento">
-                        {vendasData.topVendedores.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                        {/* // <-- CORREÇÃO: Garante que o map não quebre se 'topVendedores' for undefined */}
+                        {(vendasData.topVendedores || []).map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
                     </Bar>
                 </BarChart>
             </ChartContainer>
@@ -112,26 +111,32 @@ const AnaliseVendasTab = ({ vendasData }) => (
 
 const ProdutosEstoqueTab = ({ produtosData }) => (
   <div className="space-y-8 animate-fade-in">
+    {/* KPIs no topo */}
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
        <KpiCard icon={<Package className="w-8 h-8 text-orange-500"/>} title="Valor em Estoque" value={formatCurrency(produtosData.valorTotalEstoque)} footer="Custo total dos produtos"/>
        <KpiCard icon={<RefreshCw className="w-8 h-8 text-cyan-500"/>} title="Giro de Estoque" value={`${(produtosData.giroEstoque90d || 0).toFixed(2)}`} footer="Nos últimos 90 dias"/>
     </div>
+    
+    {/* Nova linha de gráficos */}
     <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-      <ChartContainer title="Lucratividade por Categoria" data={produtosData.lucratividadePorCategoria} className="lg:col-span-3">
-        <BarChart data={produtosData.lucratividadePorCategoria} layout="vertical" margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
+      {/* NOVO GRÁFICO: Top 10 Produtos Mais Vendidos */}
+      <ChartContainer title="Top 10 Produtos Mais Vendidos (90 dias)" data={produtosData.topProdutosVendidos} className="lg:col-span-3">
+        <BarChart data={produtosData.topProdutosVendidos} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis type="number" tickFormatter={(val) => `R$${val/1000}k`} />
-          <YAxis dataKey="categoria" type="category" width={100}/>
-          <Tooltip formatter={(value) => formatCurrency(value)}/>
-          <Legend />
-          <Bar dataKey="lucro" stackId="a" fill="#82ca9d" name="Lucro"/>
-          <Bar dataKey="custo" stackId="a" fill="#ffc658" name="Custo"/>
+          <XAxis type="number" allowDecimals={false} />
+          <YAxis dataKey="descricao" type="category" width={150} tick={{fontSize: 12}}/>
+          <Tooltip formatter={(value) => [formatNumber(value), 'Unidades vendidas']}/>
+          <Bar dataKey="quantidade" name="Quantidade" fill="#10b981">
+             {(produtosData.topProdutosVendidos || []).map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+          </Bar>
         </BarChart>
       </ChartContainer>
+
+      {/* Gráfico de Pipeline de Pedidos existente */}
       <ChartContainer title="Pipeline de Pedidos" data={produtosData.pipelinePedidos} className="lg:col-span-2">
         <PieChart>
           <Pie data={produtosData.pipelinePedidos} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={3} label>
-            {produtosData.pipelinePedidos.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+            {(produtosData.pipelinePedidos || []).map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
           </Pie>
           <Tooltip formatter={(value, name) => [`${value} pedidos`, name]}/>
           <Legend />
@@ -141,19 +146,20 @@ const ProdutosEstoqueTab = ({ produtosData }) => (
   </div>
 );
 
-
 export default function DashboardAnaliticoFinal() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [kpisData, setKpisData] = useState(null);
-  const [vendasData, setVendasData] = useState(null);
-  const [produtosData, setProdutosData] = useState(null);
+  // Inicialize os estados com uma estrutura mínima para evitar erros
+  const [kpisData, setKpisData] = useState({});
+  const [vendasData, setVendasData] = useState({});
+  const [produtosData, setProdutosData] = useState({});
   const [activeTab, setActiveTab] = useState('geral');
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
+        setError(null); // Limpa erros anteriores
         console.log("🚀 Buscando dados do dashboard...");
 
         const [kpisRes, vendasRes, produtosRes] = await Promise.all([
@@ -162,7 +168,6 @@ export default function DashboardAnaliticoFinal() {
           axios.get(`${API_URL}/dashboard/analise-produtos-estoque`),
         ]);
 
-        // ## DEBUG: Logando os dados recebidos da API ##
         console.log("✅ Dados de KPIs:", kpisRes.data);
         console.log("✅ Dados de Análise de Vendas:", vendasRes.data);
         console.log("✅ Dados de Produtos e Estoque:", produtosRes.data);
@@ -185,9 +190,7 @@ export default function DashboardAnaliticoFinal() {
   if (error) return <div className="m-8 p-6 text-center text-red-700 bg-red-100 rounded-lg">{error}</div>;
 
   const renderTabContent = () => {
-    // Garante que os dados existem antes de tentar renderizar a aba
-    if (!kpisData || !vendasData || !produtosData) return null;
-
+    // A verificação agora é mais robusta, pois os estados não são mais nulos
     switch (activeTab) {
       case 'vendas':
         return <AnaliseVendasTab vendasData={vendasData} />;

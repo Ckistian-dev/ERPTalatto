@@ -115,7 +115,7 @@ export default function LayoutDashboard() {
 
           <div className="pt-4 mt-4 border-t border-gray-700"></div>
           {verificarPermissao(usuario, ['admin']) && (
-            <SidebarItem icone={<FaStore />} titulo="Integrações" aberto={menuAberto === 'integracoes'} toggle={() => toggleMenu('integracoes')} submenu={["Sebrae", "Mercado Livre", "Tray", "Intelipost"]} sidebarAberta={sidebarAberta} links={["/integracoes/sebrae", "/integracoes/mercadolivre", "/integracoes/tray", "/integracoes/intelipost"]} location={location} />
+            <SidebarItem icone={<FaStore />} titulo="Integrações" aberto={menuAberto === 'integracoes'} toggle={() => toggleMenu('integracoes')} submenu={["Mercado Livre", "Tray", "Intelipost"]} sidebarAberta={sidebarAberta} links={["/integracoes/mercadolivre", "/integracoes/tray", "/integracoes/intelipost"]} location={location} />
           )}
         </nav>
       </aside>

@@ -150,50 +150,6 @@ export default function Listaorcamentos() {
         }
     };
 
-    const importarCSV = async (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                const texto = e.target.result;
-                const delimitador = texto.includes(';') ? ';' : ',';
-                const linhas = texto.split('\n').map(l => l.trim()).filter(Boolean);
-                const headers = linhas[0].split(delimitador).map(h => h.trim().replace(/"/g, ''));
-                const registros = linhas.slice(1).map((linha) => {
-                    const valores = linha.split(delimitador).map(v => v.trim().replace(/"/g, ''));
-                    return headers.reduce((obj, header, i) => {
-                        obj[header] = valores[i] || '';
-                        return obj;
-                    }, {});
-                });
-                const res = await axios.post(`${API_URL}/orcamentos/validar_importacao`, { registros });
-                if (res.data.conflitos.length > 0) {
-                    setConflitos(res.data.conflitos || []);
-                    setNovosorcamentos(res.data.novos || []);
-                    setMostrarModalConflitos(true);
-                    const confirmadosInicial = {};
-                    res.data.conflitos.forEach((_, idx) => confirmadosInicial[idx] = true);
-                    setConfirmarLinhas(confirmadosInicial);
-                } else {
-                    await axios.post(`${API_URL}/orcamentos/importar_csv_confirmado`, { registros: [...res.data.novos] });
-                    toast.success("Importação concluída com sucesso!");
-                    buscarorcamentos();
-                }
-            } catch (err) {
-                const msg = err?.response?.data;
-                if (msg?.erros?.length) {
-                    setMensagemErro(msg.erros.join('\n'));
-                } else {
-                    const detalhe = msg?.detail || "Erro inesperado ao importar dados.";
-                    setMensagemErro(typeof detalhe === "string" ? detalhe : JSON.stringify(detalhe, null, 2));
-                }
-            }
-        };
-        reader.readAsText(file, 'utf-8');
-        event.target.value = '';
-    };
-
     const handleAplicarFiltros = ({ filtros, data_inicio, data_fim }) => {
         setFiltrosSelecionados(filtros || []);
         setDataInicio(data_inicio || '');
@@ -279,12 +235,6 @@ export default function Listaorcamentos() {
                         <Link to="/orcamentos/novo" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded flex items-center gap-2">
                             <FaUserPlus /> Novo
                         </Link>
-                        <ButtonComPermissao permissoes={["admin"]}>
-                            <label className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center gap-2 cursor-pointer">
-                                <FaFileImport /> Importar
-                                <input type="file" accept=".csv" onChange={importarCSV} className="hidden" />
-                            </label>
-                        </ButtonComPermissao>
                         <ButtonComPermissao type="button" onClick={exportarCSV} permissoes={["admin"]} className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded flex items-center gap-2">
                             <FaFileCsv />Exportar
                         </ButtonComPermissao>

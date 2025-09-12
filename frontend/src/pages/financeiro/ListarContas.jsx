@@ -157,50 +157,6 @@ export default function Listacontas({ filtro }) {
         }
     };
 
-    const importarCSV = async (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                const texto = e.target.result;
-                const delimitador = texto.includes(';') ? ';' : ',';
-                const linhas = texto.split('\n').map(l => l.trim()).filter(Boolean);
-                const headers = linhas[0].split(delimitador).map(h => h.trim().replace(/"/g, ''));
-                const registros = linhas.slice(1).map((linha) => {
-                    const valores = linha.split(delimitador).map(v => v.trim().replace(/"/g, ''));
-                    return headers.reduce((obj, header, i) => {
-                        obj[header] = valores[i] || '';
-                        return obj;
-                    }, {});
-                });
-                const res = await axios.post(`${API_URL}/contas/validar_importacao`, { registros });
-                if (res.data.conflitos.length > 0) {
-                    setConflitos(res.data.conflitos || []);
-                    setNovoscontas(res.data.novos || []);
-                    setMostrarModalConflitos(true);
-                    const confirmadosInicial = {};
-                    res.data.conflitos.forEach((_, idx) => confirmadosInicial[idx] = true);
-                    setConfirmarLinhas(confirmadosInicial);
-                } else {
-                    await axios.post(`${API_URL}/contas/importar_csv_confirmado`, { registros: [...res.data.novos] });
-                    toast.success("Importação concluída com sucesso!");
-                    buscarcontas();
-                }
-            } catch (err) {
-                const msg = err?.response?.data;
-                if (msg?.erros?.length) {
-                    setMensagemErro(msg.erros.join('\n'));
-                } else {
-                    const detalhe = msg?.detail || "Erro inesperado ao importar dados.";
-                    setMensagemErro(typeof detalhe === "string" ? detalhe : JSON.stringify(detalhe, null, 2));
-                }
-            }
-        };
-        reader.readAsText(file, 'utf-8');
-        event.target.value = ''; // Limpa o input para permitir re-importação do mesmo arquivo
-    };
-    
     const handleAplicarFiltros = ({ filtros, data_inicio, data_fim }) => {
         setFiltrosSelecionados(filtros || []);
         setDataInicio(data_inicio || '');
@@ -270,12 +226,6 @@ export default function Listacontas({ filtro }) {
                         <Link to="/financeiro/criar" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded flex items-center gap-2">
                             <FaUserPlus /> Novo
                         </Link>
-                        <ButtonComPermissao permissoes={["admin"]}>
-                            <label className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center gap-2 cursor-pointer">
-                                <FaFileImport /> Importar
-                                <input type="file" accept=".csv" onChange={importarCSV} className="hidden" />
-                            </label>
-                        </ButtonComPermissao>
                         <ButtonComPermissao type="button" onClick={exportarCSV} permissoes={["admin"]} className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded flex items-center gap-2">
                             <FaFileCsv />Exportar
                         </ButtonComPermissao>
@@ -325,13 +275,13 @@ export default function Listacontas({ filtro }) {
                         </thead>
                         <tbody className="text-sm">
                             {loading ? (<tr><td colSpan={colunasVisiveis.length} className="text-center p-8">Carregando...</td></tr>)
-                            : contas.length === 0 ? (<tr><td colSpan={colunasVisiveis.length} className="text-center p-8 text-gray-500">Nenhuma conta encontrada.</td></tr>)
-                            : contas.map(conta => (
-                                <tr key={conta.id} onClick={() => setcontaSelecionado(conta)} className={`cursor-pointer hover:bg-teal-50 border-b ${contaSelecionado?.id === conta.id ? 'bg-teal-100' : ''}`}>
-                                    {/* APLICAÇÃO DA FORMATAÇÃO NA CÉLULA */}
-                                    {colunasVisiveis.map(coluna => <td key={coluna} className="p-3">{formatarCampo(conta[coluna], coluna)}</td>)}
-                                </tr>
-                            ))}
+                                : contas.length === 0 ? (<tr><td colSpan={colunasVisiveis.length} className="text-center p-8 text-gray-500">Nenhuma conta encontrada.</td></tr>)
+                                    : contas.map(conta => (
+                                        <tr key={conta.id} onClick={() => setcontaSelecionado(conta)} className={`cursor-pointer hover:bg-teal-50 border-b ${contaSelecionado?.id === conta.id ? 'bg-teal-100' : ''}`}>
+                                            {/* APLICAÇÃO DA FORMATAÇÃO NA CÉLULA */}
+                                            {colunasVisiveis.map(coluna => <td key={coluna} className="p-3">{formatarCampo(conta[coluna], coluna)}</td>)}
+                                        </tr>
+                                    ))}
                         </tbody>
                     </table>
                 </div>
@@ -345,64 +295,12 @@ export default function Listacontas({ filtro }) {
                 )}
             </div>
 
-            {mostrarModalConflitos && conflitos.length > 0 && (
-                <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm flex items-center justify-center z-50">
-                    <div className="bg-white p-6 rounded-2xl shadow-xl w-full max-w-6xl max-h-[90vh] overflow-y-auto border border-red-200">
-                        <div className="mb-4 text-red-600 text-center">
-                             <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M12 20.5c4.418 0 8-3.582 8-8s-3.582-8-8-8-8 3.582-8 8 3.582 8 8 8z" /></svg>
-                            <h2 className="text-xl font-bold text-red-600">⚠ Conflitos detectados</h2>
-                            <p className="text-gray-700 mt-2">Alguns registros já existem. Confirme quais deseja atualizar:</p>
-                        </div>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm border border-gray-300 mb-4">
-                                <thead className="bg-red-700 text-white">
-                                    <tr>
-                                        <th className="p-2 border text-center">✓</th>
-                                        {conflitos[0] && Object.keys(conflitos[0].novo).map((campo, i) => <th key={i} className="p-2 border text-left whitespace-nowrap">{campo}</th>)}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {conflitos.map((conflito, index) => (
-                                        <React.Fragment key={index}>
-                                            <tr className="bg-gray-100">
-                                                <td className="p-2 border text-center align-top" rowSpan={2}><input type="checkbox" checked={confirmarLinhas[index] || false} onChange={() => setConfirmarLinhas((prev) => ({ ...prev, [index]: !prev[index] }))} /></td>
-                                                {Object.entries(conflito.original || {}).map(([_, valor], i) => <td key={i} className="p-2 border text-gray-500 italic whitespace-nowrap">{valor}</td>)}
-                                            </tr>
-                                            <tr className="bg-white">
-                                                {Object.entries(conflito.novo || {}).map(([_, valor], i) => <td key={i} className="p-2 border font-medium whitespace-nowrap">{valor}</td>)}
-                                            </tr>
-                                        </React.Fragment>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                        <div className="flex justify-end gap-4 mt-4">
-                            <button onClick={() => { setMostrarModalConflitos(false); setConflitos([]); setConfirmarLinhas({}); }} className="px-4 py-2 rounded bg-gray-400 hover:bg-gray-500 text-white">Cancelar</button>
-                            <button onClick={async () => {
-                                const linhasConfirmadas = conflitos.filter((_, idx) => confirmarLinhas[idx]).map(c => { const { id, criado_em, ...rest } = c.novo; return rest; });
-                                const todosParaImportar = [...novoscontas, ...linhasConfirmadas];
-                                try {
-                                    await axios.post(`${API_URL}/contas/importar_csv_confirmado`, { registros: todosParaImportar });
-                                    toast.success('Importação concluída!');
-                                    buscarcontas();
-                                    setMostrarModalConflitos(false); setConflitos([]); setNovoscontas([]); setConfirmarLinhas({});
-                                } catch (err) {
-                                    const msg = err?.response?.data?.detail || 'Erro inesperado ao importar dados.';
-                                    setMostrarModalConflitos(false);
-                                    setTimeout(() => { setMensagemErro(msg); }, 300);
-                                }
-                            }} className="px-6 py-2 rounded bg-teal-600 hover:bg-teal-700 text-white">Confirmar Selecionados</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-            
             <ModalErro mensagem={mensagemErro} onClose={() => setMensagemErro(null)} />
-            
+
             {mostrarFiltroColunas && (
                 <ModalFiltroColunas colunas={todasColunas} colunasDropdown={colunasDropdownEditavel} onClose={() => setMostrarFiltroColunas(false)} onAplicar={handleAplicarFiltros} API_URL={API_URL} />
             )}
-            
+
             {mostrarEditarTabela && (
                 <ModalEditarTabela
                     colunas={todasColunas}

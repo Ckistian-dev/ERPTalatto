@@ -21,7 +21,7 @@ export default function ConsultaNFE() {
     const { usuario } = useAuth();
     const [mensagemErro, setMensagemErro] = useState(null);
     const [paginaAtual, setPaginaAtual] = useState(1);
-    const itensPorPagina = 15;
+    const itensPorPagina = 12; // Ajustado para o layout
     const [loading, setLoading] = useState(false);
     const [totalPaginas, setTotalPaginas] = useState(1);
     const [mostrarFiltroColunas, setMostrarFiltroColunas] = useState(false);
@@ -33,18 +33,17 @@ export default function ConsultaNFE() {
     const [mostrarEditarTabela, setMostrarEditarTabela] = useState(false);
     const [filtroRapidoColuna, setFiltroRapidoColuna] = useState('cliente_nome');
     const [filtroRapidoTexto, setFiltroRapidoTexto] = useState('');
-    const [ordenacaoColuna, setOrdenacaoColuna] = useState(null);
-    const [ordenacaoAscendente, setOrdenacaoAscendente] = useState(true);
+    const [ordenacaoColuna, setOrdenacaoColuna] = useState('data_emissao');
+    const [ordenacaoAscendente, setOrdenacaoAscendente] = useState(false);
     const [mostrarModalVisualizar, setMostrarModalVisualizar] = useState(false);
     const [opcoesDropdown, setOpcoesDropdown] = useState({});
 
-    const exibirAviso = (mensagem) => setMensagemErro(mensagem);
+    const exibirAviso = (mensagem) => toast.warn(mensagem);
 
     // --- Lógica de Busca (específica para NFE) ---
     const buscarPedidosNFE = async () => {
         setLoading(true);
         try {
-            // Filtra por pedidos que já passaram pelo faturamento e estão na expedição ou concluídos
             const filtrosStr = [
                 ...filtrosSelecionados.map(f => `${f.coluna}:${f.texto}`),
                 'situacao_pedido:Expedição',
@@ -54,13 +53,13 @@ export default function ConsultaNFE() {
             const params = {
                 page: paginaAtual,
                 limit: itensPorPagina,
-                filtro_rapido_coluna: filtroRapidoColuna,
-                filtro_rapido_texto: filtroRapidoTexto,
                 filtros: filtrosStr || undefined,
+                filtro_rapido_coluna: filtroRapidoTexto ? filtroRapidoColuna : undefined,
+                filtro_rapido_texto: filtroRapidoTexto || undefined,
                 data_inicio: dataInicio || undefined,
                 data_fim: dataFim || undefined,
-                ordenar_por: ordenacaoColuna || 'data_emissao',
-                ordenar_direcao: 'desc'
+                ordenar_por: ordenacaoColuna,
+                ordenar_direcao: ordenacaoAscendente ? 'asc' : 'desc'
             };
             const res = await axios.get(`${API_URL}/pedidos/paginado`, { params });
             setPedidos(res.data.resultados);
@@ -84,25 +83,31 @@ export default function ConsultaNFE() {
     };
 
     const formatarCampo = (valor, coluna) => {
-        if (valor === null || valor === undefined) return '';
-        if (["lista_itens", "formas_pagamento", "endereco_expedicao"].includes(coluna)) {
-            let dadosJson = valor;
-            if (typeof dadosJson === "string") {
-                try { dadosJson = JSON.parse(dadosJson); } catch (e) { return valor; }
-            }
-            if (Array.isArray(dadosJson)) return `[${dadosJson.length} itens]`;
-            if (typeof dadosJson === 'object') return '{...}';
+        if (["total", "valor_frete", "desconto_total", "total_com_desconto"].includes(coluna)) {
+            return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor || 0);
         }
-        // Formata data para o padrão brasileiro
-        if (coluna === 'data_emissao' || coluna === 'data_nf' || coluna === 'criado_em') {
+        if (coluna === "formas_pagamento") {
             try {
-                return new Date(valor).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
-            } catch (e) {
-                return valor;
-            }
+                const formas = typeof valor === 'string' ? JSON.parse(valor) : valor;
+                if (Array.isArray(formas)) {
+                    return formas.map(fp => `${fp.tipo} (${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(fp.valor || 0)})`).join(' + ');
+                }
+            } catch { return valor; }
         }
-        return String(valor);
+        if (coluna === "lista_itens") {
+            try {
+                const itens = typeof valor === 'string' ? JSON.parse(valor) : valor;
+                if (Array.isArray(itens)) {
+                    return itens.map(item => `${item.quantidade_itens}x ${item.produto}`).join(' | ');
+                }
+            } catch { return valor; }
+        }
+        if (typeof valor === 'object' && valor !== null) {
+            return JSON.stringify(valor);
+        }
+        return valor;
     };
+
 
     const colunasDropdownEditavel = {
         situacao_pedido: "situacao_pedido",
@@ -113,47 +118,8 @@ export default function ConsultaNFE() {
     // --- UseEffects ---
     useEffect(() => {
         if (!usuario) return;
-        const ordemPadrao = [
-            "id",
-            "situacao_pedido",
-            "data_emissao",
-            "data_validade",
-            "cliente_id",
-            "cliente_nome",
-            "vendedor_id",
-            "vendedor_nome",
-            "origem_venda",
-            "tipo_frete",
-            "transportadora_id",
-            "transportadora_nome",
-            "valor_frete",
-            "total",
-            "desconto_total",
-            "total_com_desconto",
-            "lista_itens",
-            "formas_pagamento",
-            "observacao",
-            "criado_em",
-            "data_finalizacao",
-            "ordem_finalizacao",
-            "endereco_expedicao",
-            "hora_expedicao",
-            "usuario_expedicao",
-            "numero_nf",
-            "serie_nfe",
-            "data_nf",
-            "nfe_chave",
-            "nfe_status",
-            "nfe_recibo",
-            "nfe_protocolo",
-            "nfe_data_autorizacao",
-            "nfe_rejeicao_motivo",
-            "nfe_xml_path",
-            "nfe_danfe_path",
-            "natureza_operacao"
-        ];
+        const ordemPadrao = [ "id", "situacao_pedido", "data_emissao", "cliente_nome", "vendedor_nome", "total_com_desconto", "numero_nf", "serie_nfe", "data_nf", "nfe_chave", "nfe_status" ];
         setTodasColunas(ordemPadrao);
-        // Utiliza um campo de visibilidade específico para a tela de consulta de NFe
         const colunas = usuario.colunas_visiveis_nfe?.length ? usuario.colunas_visiveis_nfe : ordemPadrao;
         setColunasVisiveis(colunas);
     }, [usuario]);
@@ -176,16 +142,15 @@ export default function ConsultaNFE() {
     // --- JSX (Interface do Usuário) ---
     return (
         <div className="p-6">
+            <h1 className="text-2xl sm:text-3xl font-bold mb-6 text-gray-800">Consulta de NF-e</h1>
             <div className="w-auto overflow-auto">
-                {/* Barra de Ações e Filtros */}
                 <div className="flex flex-wrap justify-between items-center mb-4 gap-2">
                     <div className="flex gap-2 flex-wrap">
-                        {/* Botão de exportar pode ser implementado no futuro */}
                         <ButtonComPermissao type="button" onClick={() => toast.info("Função de exportar em desenvolvimento.")} permissoes={["admin"]} className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded flex items-center gap-2">
                             <FaFileCsv />Exportar CSV
                         </ButtonComPermissao>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                         <div className="flex gap-2 items-center">
                             <select value={filtroRapidoColuna} onChange={(e) => { setFiltroRapidoColuna(e.target.value); setFiltroRapidoTexto(""); setPaginaAtual(1); }} className="border p-2 rounded text-sm w-48">
                                 {colunasVisiveis.map((col) => (<option key={col} value={col}>{col.replace(/_/g, ' ').toUpperCase()}</option>))}
@@ -203,97 +168,42 @@ export default function ConsultaNFE() {
                         </div>
                         <button onClick={() => setMostrarFiltroColunas(true)} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded flex items-center gap-2"><FaFilter />Filtro Avançado</button>
                         <button onClick={() => setMostrarEditarTabela(true)} className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded flex items-center gap-2"><FaTable />Editar Tabela</button>
-                        <button onClick={() => { if (!pedidoSelecionado) return exibirAviso("Selecione um pedido primeiro!"); setMostrarModalVisualizar(true); }} className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded flex items-center gap-2"><FaEye />Visualizar</button>
-
-                        {/* Botões específicos da ConsultaNFE com a lógica correta */}
-                        <button
-                            onClick={() => {
-                                if (pedidoSelecionado?.id) {
-                                    window.open(`${API_URL}/nfe/${pedidoSelecionado.id}/danfe`, '_blank', 'noopener,noreferrer');
-                                } else {
-                                    toast.warn("Selecione um pedido com NF-e autorizada.");
-                                }
-                            }}
-                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                        >
+                        <button onClick={() => { if (!pedidoSelecionado) return exibirAviso("Selecione um pedido!"); setMostrarModalVisualizar(true); }} className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded flex items-center gap-2"><FaEye />Visualizar</button>
+                        <button onClick={() => { if (pedidoSelecionado?.id) { window.open(`${API_URL}/nfe/${pedidoSelecionado.id}/danfe`, '_blank', 'noopener,noreferrer'); } else { exibirAviso("Selecione um pedido com NF-e autorizada."); } }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center gap-2">
                             <FaFilePdf /> Ver DANFE
                         </button>
-                        <button
-                            onClick={() => {
-                                if (pedidoSelecionado?.id) {
-                                    window.open(`${API_URL}/nfe/${pedidoSelecionado.id}/xml`, '_blank', 'noopener,noreferrer');
-                                } else {
-                                    toast.warn("Selecione um pedido com NF-e autorizada.");
-                                }
-                            }}
-                            className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                        >
+                        <button onClick={() => { if (pedidoSelecionado?.id) { window.open(`${API_URL}/nfe/${pedidoSelecionado.id}/xml`, '_blank', 'noopener,noreferrer'); } else { exibirAviso("Selecione um pedido com NF-e autorizada."); } }} className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded flex items-center gap-2">
                             <FaFileCode /> Ver XML
                         </button>
                     </div>
                 </div>
 
-                {/* Tabela de pedidos */}
-                <div className="overflow-x-auto">
-                    <div className="max-w-screen-lg">
-                        <table className="bg-white border border-gray-300 table-auto whitespace-nowrap w-full">
-                            <thead>
-                                <tr>
-                                    {colunasVisiveis.map((coluna) => (
-                                        <th key={coluna} className="p-2 border whitespace-nowrap">
-                                            {coluna === 'id' ? '#' : coluna.replace(/_/g, ' ').toUpperCase()}
-                                        </th>
+                <div className="overflow-x-auto bg-white rounded-lg shadow">
+                    <table className="w-full table-auto whitespace-nowrap">
+                        <thead>
+                            <tr className="bg-gray-100 text-left text-sm font-semibold text-gray-600">
+                                {colunasVisiveis.map(col => <th key={col} className="p-3 border-b-2">{col.replace(/_/g, ' ').toUpperCase()}</th>)}
+                            </tr>
+                        </thead>
+                        <tbody className="text-sm">
+                            {loading ? (<tr><td colSpan={colunasVisiveis.length} className="text-center p-8">Carregando...</td></tr>)
+                                : pedidos.length === 0 ? (<tr><td colSpan={colunasVisiveis.length} className="text-center p-8 text-gray-500">Nenhuma NF-e encontrada.</td></tr>)
+                                    : pedidos.map(pedido => (
+                                        <tr key={pedido.id} onClick={() => setPedidoSelecionado(pedido)} className={`cursor-pointer hover:bg-teal-50 border-b ${pedidoSelecionado?.id === pedido.id ? 'bg-teal-100' : ''}`}>
+                                            {colunasVisiveis.map(coluna => <td key={coluna} className="p-3">{formatarCampo(pedido[coluna], coluna)}</td>)}
+                                        </tr>
                                     ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {pedidos.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={colunasVisiveis.length}>
-                                            <div className="flex items-center pl-[63vh] h-[63vh]">
-                                                <span className="text-gray-500 text-lg">Nenhum pedido encontrado.</span>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    <>
-                                        {pedidos.map((pedido, i) => (
-                                            <tr
-                                                key={pedido.id || i}
-                                                onClick={() => setpedidoSelecionado(pedido)}
-                                                className={`cursor-pointer ${pedidoSelecionado?.id === pedido.id ? 'bg-gray-100' : ''}`}
-                                            >
-                                                {colunasVisiveis.map((coluna) => (
-                                                    <td key={coluna} className="p-2 border whitespace-nowrap">
-                                                        {pedido[coluna]}
-                                                    </td>
-                                                ))}
-                                            </tr>
-                                        ))}
+                        </tbody>
+                    </table>
+                </div>
 
-                                        {/* Preenche espaço visual com linhas invisíveis */}
-                                        {pedidos.length < 15 &&
-                                            Array.from({ length: 15 - pedidos.length }).map((_, idx) => (
-                                                <tr key={`espaco-${idx}`} className="opacity-0 pointer-events-none select-none">
-                                                    {colunasVisiveis.map((_, i) => (
-                                                        <td key={i} className="p-2 whitespace-nowrap">&nbsp;</td>
-                                                    ))}
-                                                </tr>
-                                            ))
-                                        }
-                                    </>
-                                )}
-                            </tbody>
-                        </table>
+                {!loading && totalPaginas > 1 && (
+                    <div className="flex justify-end items-center gap-4 mt-4">
+                        <button onClick={() => setPaginaAtual(p => Math.max(p - 1, 1))} disabled={paginaAtual === 1} className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50">Anterior</button>
+                        <span>Página {paginaAtual} de {totalPaginas}</span>
+                        <button onClick={() => setPaginaAtual(p => Math.min(p + 1, totalPaginas))} disabled={paginaAtual >= totalPaginas} className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50">Próxima</button>
                     </div>
-                </div>
-
-                {/* Paginação */}
-                <div className="flex justify-start items-start gap-4 mt-4">
-                    <button onClick={() => setPaginaAtual((p) => Math.max(p - 1, 1))} disabled={paginaAtual === 1} className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-50">Anterior</button>
-                    <span>Página {paginaAtual} de {totalPaginas}</span>
-                    <button onClick={() => setPaginaAtual((p) => Math.min(p + 1, totalPaginas))} disabled={paginaAtual >= totalPaginas} className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-50">Próxima</button>
-                </div>
+                )}
             </div>
 
             {/* Modais */}
@@ -304,4 +214,3 @@ export default function ConsultaNFE() {
         </div>
     );
 }
-

@@ -1,5 +1,4 @@
-// src/components/embalagens/ConstrutorFormula.jsx
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { FaPlus, FaTimes } from 'react-icons/fa';
 
 // Constantes com a NOVA estrutura de variáveis que você definiu
@@ -26,15 +25,39 @@ const VARIAVEIS_DISPONIVEIS = [
 
 const OPERADORES_DISPONIVEIS = ['+', '-', '*', '/'];
 
-// Componente para construir uma única fórmula (Nenhuma outra alteração necessária aqui)
+// Hook customizado para detectar cliques fora de um elemento
+function useOnClickOutside(ref, handler) {
+    useEffect(() => {
+        const listener = (event) => {
+            // Não faz nada se o clique for dentro do ref do elemento ou seus descendentes
+            if (!ref.current || ref.current.contains(event.target)) {
+                return;
+            }
+            handler(event);
+        };
+        document.addEventListener('mousedown', listener);
+        document.addEventListener('touchstart', listener);
+        return () => {
+            document.removeEventListener('mousedown', listener);
+            document.removeEventListener('touchstart', listener);
+        };
+    }, [ref, handler]);
+}
+
+
+// Componente para construir uma única fórmula
 export default function ConstrutorFormula({ label, formula, onChange }) {
     const [mostraSeletor, setMostraSeletor] = useState(false);
+    const seletorRef = useRef(null); // Ref para o menu flutuante
+
+    // Usa o hook customizado para fechar o menu ao clicar fora
+    useOnClickOutside(seletorRef, () => setMostraSeletor(false));
 
     const adicionarComponente = (tipo, valor) => {
         if (!valor) return;
         const novoComponente = { tipo, valor: tipo === 'numero' ? parseFloat(valor) : valor };
         onChange([...formula, novoComponente]);
-        setMostraSeletor(false);
+        setMostraSeletor(false); // Fecha o menu após adicionar
     };
 
     const removerComponente = (index) => {
@@ -46,7 +69,9 @@ export default function ConstrutorFormula({ label, formula, onChange }) {
     return (
         <div className="mb-2">
             <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-            <div className="flex flex-wrap items-center gap-2 p-2 border rounded-md min-h-[42px] bg-white">
+            
+            {/* O container principal agora é 'relative' para posicionar o menu flutuante */}
+            <div className="relative flex flex-wrap items-center gap-2 p-2 border rounded-md min-h-[42px] bg-white">
                 {formula.map((comp, index) => (
                     <div key={index} className="flex items-center gap-1 px-2 py-1 rounded bg-gray-200 text-sm">
                         <span>
@@ -59,36 +84,50 @@ export default function ConstrutorFormula({ label, formula, onChange }) {
                         </button>
                     </div>
                 ))}
-                <button type="button" onClick={() => setMostraSeletor(true)} className="text-teal-600 hover:text-teal-800">
+                
+                {/* Botão que abre o menu flutuante */}
+                <button type="button" onClick={() => setMostraSeletor(s => !s)} className="text-teal-600 hover:text-teal-800">
                     <FaPlus />
                 </button>
-            </div>
 
-            {mostraSeletor && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2 p-2 border rounded-md bg-gray-50">
-                    <div>
-                        <label className="text-xs font-bold">Variável</label>
-                        <select onChange={(e) => adicionarComponente('variavel', e.target.value)} className="w-full p-1 border rounded mt-1">
-                            <option value="">Selecione...</option>
-                            {VARIAVEIS_DISPONIVEIS.map(v => <option key={v.valor} value={v.valor}>{v.nome}</option>)}
-                        </select>
+                {/* --- O NOVO MENU FLUTUANTE --- */}
+                {mostraSeletor && (
+                    <div 
+                        ref={seletorRef}
+                        className="absolute top-full left-0 mt-2 z-10 w-full sm:w-80 bg-white border border-gray-200 rounded-lg shadow-xl p-4"
+                    >
+                        <div className="flex justify-between items-center mb-3">
+                            <h3 className="text-md font-semibold text-gray-800">Adicionar Componente</h3>
+                            <button onClick={() => setMostraSeletor(false)} className="text-gray-400 hover:text-gray-600">
+                                <FaTimes />
+                            </button>
+                        </div>
+                        
+                        <div className="space-y-3">
+                            <div>
+                                <label className="text-xs font-bold text-gray-600">Variável</label>
+                                <select onChange={(e) => adicionarComponente('variavel', e.target.value)} className="w-full p-1.5 border rounded mt-1 text-sm">
+                                    <option value="">Selecione...</option>
+                                    {VARIAVEIS_DISPONIVEIS.map(v => <option key={v.valor} value={v.valor}>{v.nome}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-gray-600">Operador</label>
+                                <select onChange={(e) => adicionarComponente('operador', e.target.value)} className="w-full p-1.5 border rounded mt-1 text-sm">
+                                        <option value="">Selecione...</option>
+                                    {OPERADORES_DISPONIVEIS.map(op => <option key={op} value={op}>{op}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-gray-600">Número</label>
+                                <input type="number" step="0.01" onBlur={(e) => adicionarComponente('numero', e.target.value)}
+                                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); adicionarComponente('numero', e.target.value); }}}
+                                   className="w-full p-1.5 border rounded mt-1 text-sm" placeholder="Ex: 2.5"/>
+                            </div>
+                        </div>
                     </div>
-                    <div>
-                        <label className="text-xs font-bold">Operador</label>
-                        <select onChange={(e) => adicionarComponente('operador', e.target.value)} className="w-full p-1 border rounded mt-1">
-                                <option value="">Selecione...</option>
-                            {OPERADORES_DISPONIVEIS.map(op => <option key={op} value={op}>{op}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="text-xs font-bold">Número</label>
-                        <input type="number" step="0.01" onBlur={(e) => adicionarComponente('numero', e.target.value)}
-                         onKeyDown={(e) => e.key === 'Enter' && adicionarComponente('numero', e.target.value)}
-                         className="w-full p-1 border rounded mt-1" placeholder="Ex: 2.5"/>
-                    </div>
-                    <button type="button" onClick={() => setMostraSeletor(false)} className="text-sm text-red-600 sm:col-span-3 text-right">Fechar</button>
-                </div>
-            )}
+                )}
+            </div>
         </div>
     );
 }

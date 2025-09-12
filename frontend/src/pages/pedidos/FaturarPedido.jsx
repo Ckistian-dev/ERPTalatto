@@ -22,18 +22,18 @@ export default function Listapedidos() {
     // Estados principais
     const [pedidos, setPedidos] = useState([]);
     const [pedidoSelecionado, setPedidoSelecionado] = useState(null);
-
-    // ... (outros estados permanecem os mesmos) ...
-    const { usuario } = useAuth();
     const [mensagemErro, setMensagemErro] = useState(null);
+
+    // Estados de permissão e paginação
+    const { usuario } = useAuth();
+    const [paginaAtual, setPaginaAtual] = useState(1);
+    const itensPorPagina = 12; // Ajustado para corresponder ao layout
     const [loading, setLoading] = useState(false);
-    const [mostrarModalFaturar, setMostrarModalFaturar] = useState(false);
-    const [mostrarModalVisualizar, setMostrarModalVisualizar] = useState(false);
+    const [totalPaginas, setTotalPaginas] = useState(1);
+
+    // Customização da tabela e filtros
     const [mostrarFiltroColunas, setMostrarFiltroColunas] = useState(false);
     const [mostrarEditarTabela, setMostrarEditarTabela] = useState(false);
-    const [paginaAtual, setPaginaAtual] = useState(1);
-    const itensPorPagina = 15;
-    const [totalPaginas, setTotalPaginas] = useState(1);
     const [colunasVisiveis, setColunasVisiveis] = useState([]);
     const [todasColunas, setTodasColunas] = useState([]);
     const [dataInicio, setDataInicio] = useState('');
@@ -44,6 +44,10 @@ export default function Listapedidos() {
     const [opcoesDropdown, setOpcoesDropdown] = useState({});
     const [ordenacaoColuna, setOrdenacaoColuna] = useState('data_emissao');
     const [ordenacaoAscendente, setOrdenacaoAscendente] = useState(false);
+
+    // Estados dos Modais
+    const [mostrarModalVisualizar, setMostrarModalVisualizar] = useState(false);
+    const [mostrarModalFaturar, setMostrarModalFaturar] = useState(false);
 
 
     // Função para atualizar um pedido no estado local da UI
@@ -97,7 +101,6 @@ export default function Listapedidos() {
         startPolling(pedido_id); // Inicia a consulta periódica
     };
 
-    // ... (O restante das suas funções como buscarPedidos, handleConfirmarFaturamento, etc., permanecem as mesmas) ...
     const buscarPedidos = async () => {
         setLoading(true);
         try {
@@ -129,6 +132,7 @@ export default function Listapedidos() {
             setLoading(false);
         }
     };
+
     const handleConfirmarFaturamento = async () => {
         if (!pedidoSelecionado || pedidoSelecionado.nfe_status !== 'autorizado') {
             toast.warn("Apenas pedidos com NF-e AUTORIZADA podem ser movidos.");
@@ -144,45 +148,41 @@ export default function Listapedidos() {
             toast.error("Erro ao confirmar faturamento do pedido.");
         }
     };
-    const exportarCSV = () => {
+
+    const exportarCSV = async () => {
         if (pedidos.length === 0) {
             toast.warn("Não há dados para exportar.");
             return;
         }
-        const colunas = colunasVisiveis;
-        const header = colunas.join(',') + '\n';
-        const rows = pedidos.map(pedido => {
-            return colunas.map(col => {
-                let value = formatarCampo(pedido[col], col);
-                if (typeof value === 'string') {
-                    value = `"${value.replace(/"/g, '""')}"`; // Escapa aspas
-                }
-                return value;
-            }).join(',');
-        }).join('\n');
-
-        const csvContent = header + rows;
-        const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' }); // BOM for Excel
-        const link = document.createElement("a");
-        const url = URL.createObjectURL(blob);
-        link.setAttribute("href", url);
-        link.setAttribute("download", "pedidos_faturamento.csv");
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    };
-    const formatarCampo = (valor, coluna) => {
-        if (valor === null || valor === undefined) return '';
-        if (["lista_itens", "formas_pagamento", "endereco_expedicao"].includes(coluna)) {
-            let dadosJson = valor;
-            if (typeof dadosJson === "string") {
-                try { dadosJson = JSON.parse(dadosJson); } catch (e) { return valor; }
-            }
-            if (Array.isArray(dadosJson)) return `[${dadosJson.length} itens]`;
-            if (typeof dadosJson === 'object') return '{...}';
+        // Lógica de exportação robusta
+        try {
+            const headers = colunasVisiveis;
+            const linhas = pedidos.map(pedido =>
+                headers.map(h => {
+                    const valor = pedido[h];
+                    if (valor === null || valor === undefined) return '""';
+                    const valorFormatado = formatarCampo(valor, h);
+                    if (typeof valorFormatado === 'object') {
+                        return `"${JSON.stringify(valorFormatado).replace(/"/g, '""')}"`;
+                    }
+                    return `"${String(valorFormatado).replace(/"/g, '""')}"`;
+                }).join(',')
+            );
+            const csv = [headers.join(','), ...linhas].join('\n');
+            const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.setAttribute('download', 'pedidos_faturamento.csv');
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            toast.success("CSV exportado com sucesso!");
+        } catch (err) {
+            toast.error("Erro ao exportar CSV");
+            console.error("Erro exportar CSV:", err);
         }
-        return String(valor);
     };
+
     const handleAplicarFiltros = ({ filtros, data_inicio, data_fim }) => {
         setFiltrosSelecionados(filtros || []);
         setDataInicio(data_inicio || '');
@@ -190,26 +190,27 @@ export default function Listapedidos() {
         setPaginaAtual(1);
         setMostrarFiltroColunas(false);
     };
+
     useEffect(() => {
         if (usuario) {
             const ordemPadrao = [
-                "id", "situacao_pedido","nfe_status", "data_emissao", "cliente_nome",
-                "vendedor_nome", "origem_venda",
-                "transportadora_nome", "valor_frete", "total", "desconto_total", "total_com_desconto",
-                "lista_itens", "formas_pagamento", "observacao", "criado_em", "data_finalizacao",
-                "ordem_finalizacao", "endereco_expedicao", "hora_expedicao", "usuario_expedicao",
-                "numero_nf", "data_nf" 
+                "id", "data_emissao", "data_validade",
+                "cliente_nome", "vendedor_nome", "origem_venda", "lista_itens",
+                "total_com_desconto"
             ];
             setTodasColunas(ordemPadrao);
             setColunasVisiveis(usuario.colunas_visiveis_pedidos || ordemPadrao);
         }
     }, [usuario]);
+
     useEffect(() => {
         if (colunasVisiveis.length > 0) {
             buscarPedidos();
         }
     }, [paginaAtual, filtrosSelecionados, filtroRapidoTexto, dataInicio, dataFim, ordenacaoColuna, ordenacaoAscendente, colunasVisiveis]);
+
     const colunasDropdownEditavel = { situacao_pedido: "situacao_pedido", origem_venda: "origem_venda", tipo_frete: "tipo_frete", condicao_pagamento: "condicao_pagamento" };
+
     useEffect(() => {
         const tipo = colunasDropdownEditavel[filtroRapidoColuna];
         if (tipo && !opcoesDropdown[filtroRapidoColuna]) {
@@ -219,27 +220,55 @@ export default function Listapedidos() {
         }
     }, [filtroRapidoColuna]);
 
+    // FUNÇÃO COPIADA DO PRIMEIRO CÓDIGO
+    const formatarCampo = (valor, coluna) => {
+        if (["total", "valor_frete", "desconto_total", "total_com_desconto"].includes(coluna)) {
+            return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor || 0);
+        }
+        if (coluna === "formas_pagamento") {
+            try {
+                const formas = typeof valor === 'string' ? JSON.parse(valor) : valor;
+                if (Array.isArray(formas)) {
+                    return formas.map(fp => `${fp.tipo} (${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(fp.valor || 0)})`).join(' + ');
+                }
+            } catch { return valor; }
+        }
+        if (coluna === "lista_itens") {
+            try {
+                const itens = typeof valor === 'string' ? JSON.parse(valor) : valor;
+                if (Array.isArray(itens)) {
+                    return itens.map(item => `${item.quantidade_itens}x ${item.produto}`).join(' | ');
+                }
+            } catch { return valor; }
+        }
+        if (typeof valor === 'object' && valor !== null) {
+            return JSON.stringify(valor);
+        }
+        return valor;
+    };
 
+    // LAYOUT (JSX) COPIADO E ADAPTADO DO PRIMEIRO CÓDIGO
     return (
         <div className="p-6">
+            <h1 className="text-2xl sm:text-3xl font-bold mb-6 text-gray-800">Pedidos para Faturamento</h1>
             <div className="w-auto overflow-auto">
                 <div className="flex flex-wrap justify-between items-center mb-4 gap-2">
-                    {/* ... Seus botões de ação ... */}
                     <div className="flex gap-2 flex-wrap">
                         <ButtonComPermissao type="button" onClick={exportarCSV} permissoes={["admin"]} className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded flex items-center gap-2">
-                            <FaFileCsv />Exportar CSV
+                            <FaFileCsv />Exportar
                         </ButtonComPermissao>
                     </div>
-                    <div className="flex gap-2">
+
+                    <div className="flex gap-2 flex-wrap">
                         <div className="flex gap-2 items-center">
                             <select value={filtroRapidoColuna} onChange={(e) => { setFiltroRapidoColuna(e.target.value); setFiltroRapidoTexto(""); setPaginaAtual(1); }} className="border p-2 rounded text-sm w-48">
-                                {colunasVisiveis.map((col) => (<option key={col} value={col}>{col.replace(/_/g, ' ').toUpperCase()}</option>))}
+                                {colunasVisiveis.map((col) => <option key={col} value={col}>{col.replace(/_/g, ' ').toUpperCase()}</option>)}
                             </select>
                             <div className="w-64">
                                 {colunasDropdownEditavel[filtroRapidoColuna] ? (
                                     <select value={filtroRapidoTexto} onChange={(e) => { setFiltroRapidoTexto(e.target.value); setPaginaAtual(1); }} className="w-full border p-2 rounded text-sm">
                                         <option value="">Selecione</option>
-                                        {(opcoesDropdown[filtroRapidoColuna] || []).map((op) => (<option key={op.id} value={op.valor}>{op.valor}</option>))}
+                                        {(opcoesDropdown[filtroRapidoColuna] || []).map((op) => <option key={op.id} value={op.valor}>{op.valor}</option>)}
                                     </select>
                                 ) : (
                                     <input type="text" placeholder="Pesquisar..." value={filtroRapidoTexto} onChange={(e) => { setFiltroRapidoTexto(e.target.value); setPaginaAtual(1); }} className="w-full border p-2 rounded text-sm" />
@@ -253,32 +282,28 @@ export default function Listapedidos() {
                     </div>
                 </div>
 
-                <div className="overflow-x-auto">
-                    <div className="max-w-screen-lg">
-                        <table className="bg-white border border-gray-300 table-auto whitespace-nowrap w-full">
-                            <thead>
-                                <tr>
-                                    {colunasVisiveis.map((coluna) => (<th key={coluna} className="p-2 border whitespace-nowrap">{coluna === 'id' ? '#' : coluna.replace(/_/g, ' ').toUpperCase()}</th>))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {loading ? (
-                                    <tr><td colSpan={colunasVisiveis.length} className="text-center py-10">Carregando...</td></tr>
-                                ) : pedidos.length === 0 ? (
-                                    <tr><td colSpan={colunasVisiveis.length}><div className="flex items-center justify-center h-[63vh]"><span className="text-gray-500 text-lg">Nenhum pedido encontrado.</span></div></td></tr>
-                                ) : (
-                                    pedidos.map((pedido) => (
-                                        <tr key={pedido.id} onClick={() => setPedidoSelecionado(pedido)} className={`cursor-pointer ${pedidoSelecionado?.id === pedido.id ? 'bg-blue-100' : 'hover:bg-gray-50'}`}>
-                                            {colunasVisiveis.map((coluna) => (
-                                                <td key={coluna} className="p-2 border whitespace-nowrap text-sm">
+                <div className="overflow-x-auto bg-white rounded-lg shadow">
+                    <table className="w-full table-auto whitespace-nowrap">
+                        <thead>
+                            <tr className="bg-gray-100 text-left text-sm font-semibold text-gray-600">
+                                {colunasVisiveis.map(col => <th key={col} className="p-3 border-b-2">{col.replace(/_/g, ' ').toUpperCase()}</th>)}
+                            </tr>
+                        </thead>
+                        <tbody className="text-sm">
+                            {loading ? (<tr><td colSpan={colunasVisiveis.length} className="text-center p-8">Carregando...</td></tr>)
+                                : pedidos.length === 0 ? (<tr><td colSpan={colunasVisiveis.length} className="text-center p-8 text-gray-500">Nenhum pedido para faturamento.</td></tr>)
+                                    : pedidos.map(pedido => (
+                                        <tr key={pedido.id} onClick={() => setPedidoSelecionado(pedido)} className={`cursor-pointer hover:bg-teal-50 border-b ${pedidoSelecionado?.id === pedido.id ? 'bg-teal-100' : ''}`}>
+                                            {colunasVisiveis.map(coluna => (
+                                                <td key={coluna} className="p-3">
                                                     {coluna === 'nfe_status' ? (
                                                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${{
-                                                                'autorizado': 'bg-green-100 text-green-800',
-                                                                'erro_autorizacao': 'bg-red-100 text-red-800',
-                                                                'processando_autorizacao': 'bg-yellow-100 text-yellow-800',
-                                                            }[pedido.nfe_status] || 'bg-gray-100 text-gray-800'
+                                                            'autorizado': 'bg-green-100 text-green-800',
+                                                            'erro_autorizacao': 'bg-red-100 text-red-800',
+                                                            'processando_autorizacao': 'bg-yellow-100 text-yellow-800',
+                                                        }[pedido.nfe_status] || 'bg-gray-100 text-gray-800'
                                                             }`}>
-                                                            {isPollingFor(pedido.id) && <Loader2 size={12} className="animate-spin mr-1" />}
+                                                            {isPollingFor(pedido.id) && <Loader2 size={12} className="animate-spin inline-block mr-1" />}
                                                             {pedido.nfe_status || 'N/A'}
                                                         </span>
                                                     ) : (
@@ -287,35 +312,23 @@ export default function Listapedidos() {
                                                 </td>
                                             ))}
                                         </tr>
-                                    ))
-                                )}
-                                {/* Preenche espaço visual com linhas invisíveis */}
-                                {pedidos.length < 15 &&
-                                    Array.from({ length: 15 - pedidos.length }).map((_, idx) => (
-                                        <tr key={`espaco-${idx}`} className="opacity-0 pointer-events-none select-none">
-                                            {colunasVisiveis.map((_, i) => (
-                                                <td key={i} className="p-2 whitespace-nowrap">&nbsp;</td>
-                                            ))}
-                                        </tr>
-                                    ))
-                                }
-                            </tbody>
-                        </table>
-                    </div>
+                                    ))}
+                        </tbody>
+                    </table>
                 </div>
 
-                {!loading && (
-                    <div className="flex justify-start items-start gap-4 mt-4">
-                        <button onClick={() => setPaginaAtual((p) => Math.max(p - 1, 1))} disabled={paginaAtual === 1} className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-50">Anterior</button>
+                {!loading && totalPaginas > 1 && (
+                    <div className="flex justify-end items-center gap-4 mt-4">
+                        <button onClick={() => setPaginaAtual(p => Math.max(p - 1, 1))} disabled={paginaAtual === 1} className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50">Anterior</button>
                         <span>Página {paginaAtual} de {totalPaginas}</span>
-                        <button onClick={() => setPaginaAtual((p) => Math.min(p + 1, totalPaginas))} disabled={paginaAtual >= totalPaginas} className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-50">Próxima</button>
+                        <button onClick={() => setPaginaAtual(p => Math.min(p + 1, totalPaginas))} disabled={paginaAtual >= totalPaginas} className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50">Próxima</button>
                     </div>
                 )}
             </div>
 
             {/* Modais */}
             <ModalErro mensagem={mensagemErro} onClose={() => setMensagemErro(null)} />
-            {mostrarFiltroColunas && <ModalFiltroColunas colunas={todasColunas} colunasDropdown={colunasDropdownEditavel} onClose={() => setMostrarFiltroColunas(false)} onAplicar={handleAplicarFiltros} />}
+            {mostrarFiltroColunas && <ModalFiltroColunas colunas={todasColunas} colunasDropdown={colunasDropdownEditavel} onClose={() => setMostrarFiltroColunas(false)} onAplicar={handleAplicarFiltros} API_URL={API_URL} />}
             {mostrarEditarTabela && <ModalEditarTabela colunas={todasColunas} selecionadas={colunasVisiveis} onClose={() => setMostrarEditarTabela(false)} onSalvar={({ colunas }) => setColunasVisiveis(colunas)} />}
             {mostrarModalVisualizar && <ModalVisualizarPedido pedido={pedidoSelecionado} onClose={() => setMostrarModalVisualizar(false)} />}
             {mostrarModalFaturar && (
