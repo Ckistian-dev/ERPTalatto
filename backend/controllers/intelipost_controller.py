@@ -169,7 +169,6 @@ def buscar_transportadora_por_nome(nome: str = Query(..., description="Nome da t
         cursor.close()
         conn.close()
 
-# [INÍCIO DA ALTERAÇÃO]
 @router.get("/cliente_cep/{cliente_id}", response_model=ClienteLocalizacaoSchema)
 def get_cliente_cep(cliente_id: int):
     """
@@ -179,15 +178,17 @@ def get_cliente_cep(cliente_id: int):
     conn = pool.get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        # Query atualizada para selecionar todos os campos necessários
         cursor.execute("""
             SELECT 
                 nome_razao, logradouro, numero, bairro, cidade, estado, cep 
             FROM cadastros 
-            WHERE id = %s
+            WHERE id = %s AND tipo_cadastro = 'Cliente'
         """, (cliente_id,))
         
         cliente = cursor.fetchone()
+        
+        # [ADICIONE ESTA LINHA PARA TESTE]
+        print(f"DADOS DO CLIENTE ENCONTRADOS NO BACKEND: {cliente}")
         
         if not cliente:
             raise HTTPException(
@@ -195,7 +196,6 @@ def get_cliente_cep(cliente_id: int):
                 detail="Cliente não encontrado."
             )
             
-        # Retorna o objeto completo com os dados do cliente
         return cliente
         
     finally:
