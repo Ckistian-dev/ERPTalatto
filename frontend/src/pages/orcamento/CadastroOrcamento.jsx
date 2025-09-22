@@ -91,12 +91,26 @@ export default function CadastroOrçamento({ modo = "novo" }) {
             }
 
             try {
-                const pricePromises = Array.from(productIdsToFetch).map(id =>
+                // [INÍCIO DA CORREÇÃO]
+                const productIdsArray = Array.from(productIdsToFetch);
+                const pricePromises = productIdsArray.map(id =>
                     axios.get(`${API_URL}/tabela_precos_por_produto?produto_id=${id}`)
                 );
                 const responses = await Promise.all(pricePromises);
-                const allPriceConfigs = responses.flatMap(res => res.data || []);
+
+                // Mapeia as respostas, adicionando o ID do produto a cada tabela de preço
+                const allPriceConfigs = responses.flatMap((res, index) => {
+                    const productId = productIdsArray[index];
+                    const pricesForProduct = res.data || [];
+                    return pricesForProduct.map(priceInfo => ({
+                        ...priceInfo,
+                        produto_id: productId // <-- Chave da correção!
+                    }));
+                });
+
                 setPrecosDisponiveis(allPriceConfigs);
+                // [FIM DA CORREÇÃO]
+
             } catch (error) {
                 console.error("Erro ao buscar preços dos produtos:", error);
                 toast.error("Não foi possível carregar as configurações de preço.");

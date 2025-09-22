@@ -18,9 +18,14 @@ export default function CampoItens({
     const baseUrl = API_URL || import.meta.env.VITE_API_BASE_URL;
 
     // --- Funções Auxiliares de Cálculo (sem alterações) ---
-    const getPriceConfig = (tabelaPrecoId) => {
-        if (!precosDisponiveis || !tabelaPrecoId) return null;
-        const precoEncontrado = precosDisponiveis.find(p => p.id === tabelaPrecoId);
+    const getPriceConfig = (tabelaPrecoId, produtoId) => { // 1. Adicionado 'produtoId'
+        if (!precosDisponiveis || !tabelaPrecoId || !produtoId) return null;
+
+        // 2. A busca agora usa tanto o ID da tabela quanto o ID do produto
+        const precoEncontrado = precosDisponiveis.find(p =>
+            p.id === tabelaPrecoId && p.produto_id === produtoId
+        );
+
         return precoEncontrado ? precoEncontrado.config : null;
     };
 
@@ -33,9 +38,10 @@ export default function CampoItens({
         }
         return 0;
     };
-    
+
     const calcularValoresItem = (item) => {
-        const priceConfig = getPriceConfig(item.tabela_preco_id);
+        // [CORREÇÃO] Passa o ID do produto do item para a função getPriceConfig
+        const priceConfig = getPriceConfig(item.tabela_preco_id, item.produto_id);
         const quantidade = Number(item.quantidade_itens) || 1;
 
         if (!priceConfig || typeof priceConfig.valor === 'undefined') {
@@ -61,6 +67,7 @@ export default function CampoItens({
         };
     };
 
+
     useEffect(() => {
         if (precosDisponiveis.length > 0 && Array.isArray(itens)) {
             const itensRecalculados = itens.map(calcularValoresItem);
@@ -69,11 +76,11 @@ export default function CampoItens({
             }
         }
     }, [precosDisponiveis, itens, setItens]);
-    
+
     useEffect(() => {
         if (Array.isArray(itens)) {
             const novoTotalGeral = itens.reduce((acc, item) => acc + (item.total_com_desconto || 0), 0);
-            
+
             setForm((prev) => ({
                 ...prev,
                 lista_itens: itens,
@@ -131,9 +138,10 @@ export default function CampoItens({
         };
 
         const novoItemCalculado = calcularValoresItem(itemBase);
-        
+
         if (!novoItemCalculado.preco_unitario && novoItemCalculado.total_com_desconto === 0) {
-            const priceConfig = getPriceConfig(itemBase.tabela_preco_id);
+            // [CORREÇÃO] Passa o ID do produto também nesta verificação
+            const priceConfig = getPriceConfig(itemBase.tabela_preco_id, itemBase.produto_id);
             if (!priceConfig) return toast.error("Preço do produto não encontrado. Verifique o cadastro do produto.");
         }
 
@@ -170,7 +178,7 @@ export default function CampoItens({
         setItens(prev => prev.filter((_, i) => i !== index));
         toast.success("Item removido!");
     };
-    
+
     return (
         <div className="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
             <CampoDropdownDb
@@ -201,7 +209,7 @@ export default function CampoItens({
                 campoValor="id"
                 campoLabel="nome"
                 disabled={!form.produto_selecionado}
-                key={form.produto_selecionado} 
+                key={form.produto_selecionado}
             />
             <div className="col-span-2 flex justify-end">
                 <button
