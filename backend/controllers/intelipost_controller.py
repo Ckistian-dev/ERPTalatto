@@ -187,7 +187,6 @@ def get_cliente_cep(cliente_id: int):
         
         cliente = cursor.fetchone()
         
-        # [ADICIONE ESTA LINHA PARA TESTE]
         print(f"DADOS DO CLIENTE ENCONTRADOS NO BACKEND: {cliente}")
         
         if not cliente:
