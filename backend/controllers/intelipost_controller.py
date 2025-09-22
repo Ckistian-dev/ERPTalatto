@@ -27,7 +27,7 @@ pool = mysql.connector.pooling.MySQLConnectionPool(
 )
 
 # ==================================
-#             SCHEMAS
+#         SCHEMAS
 # ==================================
 
 class IntelipostConfigSchema(BaseModel):
@@ -43,8 +43,20 @@ class CotacaoAvulsaRequestSchema(BaseModel):
     destination_zip_code: str
     items: List[ItemCotacaoSchema]
 
+# [NOVO] Schema de resposta para os dados de localização do cliente.
+# Ajuda na documentação e validação da API.
+class ClienteLocalizacaoSchema(BaseModel):
+    nome_razao: Optional[str] = None
+    logradouro: Optional[str] = None
+    numero: Optional[str] = None
+    bairro: Optional[str] = None
+    cidade: Optional[str] = None
+    estado: Optional[str] = None
+    cep: Optional[str] = None
+
+
 # ==================================
-#        FUNÇÕES AUXILIARES
+#       FUNÇÕES AUXILIARES
 # ==================================
 
 def _find_carrier_by_word_match(api_name: str, all_carriers: List[Dict]) -> Optional[Dict]:
@@ -65,7 +77,7 @@ def _find_carrier_by_word_match(api_name: str, all_carriers: List[Dict]) -> Opti
     return None
 
 # ==================================
-#           CONTROLLER
+#         CONTROLLER
 # ==================================
 
 router = APIRouter(
@@ -129,7 +141,7 @@ async def fazer_cotacao_avulsa(
     try:
         intelipost_service = IntelipostService(db=db)
         return await intelipost_service.get_quote_for_items(
-            items=[item.dict() for item in request.items],
+            items=[item.model_dump() for item in request.items],
             destination_zip_code=request.destination_zip_code
         )
     except HTTPException as e:
@@ -157,16 +169,35 @@ def buscar_transportadora_por_nome(nome: str = Query(..., description="Nome da t
         cursor.close()
         conn.close()
 
-@router.get("/cliente_cep/{cliente_id}")
+# [INÍCIO DA ALTERAÇÃO]
+@router.get("/cliente_cep/{cliente_id}", response_model=ClienteLocalizacaoSchema)
 def get_cliente_cep(cliente_id: int):
+    """
+    Busca os dados de localização de um cliente específico pelo seu ID.
+    Retorna um objeto com nome, endereço, cidade, estado e CEP.
+    """
     conn = pool.get_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute("SELECT cep FROM cadastros WHERE id = %s AND tipo_cadastro = 'Cliente'", (cliente_id,))
+        # Query atualizada para selecionar todos os campos necessários
+        cursor.execute("""
+            SELECT 
+                nome_razao, logradouro, numero, bairro, cidade, estado, cep 
+            FROM cadastros 
+            WHERE id = %s AND tipo_cadastro = 'Cliente'
+        """, (cliente_id,))
+        
         cliente = cursor.fetchone()
-        if not cliente or not cliente.get('cep'):
-            raise HTTPException(status_code=404, detail="CEP do cliente não encontrado. Verifique o cadastro.")
-        return {"cep": cliente['cep']}
+        
+        if not cliente:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail="Cliente não encontrado."
+            )
+            
+        # Retorna o objeto completo com os dados do cliente
+        return cliente
+        
     finally:
         cursor.close()
         conn.close()

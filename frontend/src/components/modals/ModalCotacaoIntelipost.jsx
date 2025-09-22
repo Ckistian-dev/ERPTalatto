@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
-import { FaTruck, FaSave, FaTimes, FaSearchLocation } from 'react-icons/fa';
+// [NOVO] Importado o ícone de localização
+import { FaTruck, FaSave, FaTimes, FaSearchLocation, FaMapMarkerAlt } from 'react-icons/fa';
 
 import ButtonComPermissao from "@/components/buttons/ButtonComPermissao";
 
@@ -14,6 +15,9 @@ export default function ModalCotacaoIntelipost({ isOpen, onClose, onSelectFrete,
     const [salvando, setSalvando] = useState(false);
     const [precisaCep, setPrecisaCep] = useState(false);
     const [cepManual, setCepManual] = useState("");
+    
+    // [NOVO] Estado para armazenar os dados do cliente
+    const [dadosCliente, setDadosCliente] = useState(null);
 
     /**
      * Função principal que realiza a cotação na API da Intelipost.
@@ -66,34 +70,41 @@ export default function ModalCotacaoIntelipost({ isOpen, onClose, onSelectFrete,
 
     /**
      * Inicia o processo de cotação quando o modal abre.
-     * Verifica se há um cliente para buscar o CEP ou se deve pedir o CEP manualmente.
+     * Verifica se há um cliente para buscar os seus dados ou se deve pedir o CEP manualmente.
      */
     const iniciarProcessoCotacao = async () => {
         setLoading(true);
         setResultado(null);
         setFreteSelecionado(null);
 
-        // Se não houver um clienteId, vai direto para a etapa de CEP manual.
         if (!clienteId) {
             setPrecisaCep(true);
             setLoading(false);
             return;
         }
 
-        // Se houver um clienteId, tenta buscar o CEP dele no cadastro.
         try {
-            const cepRes = await axios.get(`${API_URL}/intelipost/cliente_cep/${clienteId}`);
-            const destination_zip_code = cepRes.data?.cep;
+            // [ALTERADO] A API agora deve retornar o objeto completo do cliente, não apenas o CEP.
+            // Isso permite popular o card de informações de destino.
+            const res = await axios.get(`${API_URL}/intelipost/cliente_cep/${clienteId}`);
+            const clienteInfo = res.data; // Espera-se um objeto como: { nome_razao, logradouro, cep, ... }
+            
+            // [NOVO] Armazena os dados do cliente no estado
+            setDadosCliente(clienteInfo); 
+
+            const destination_zip_code = clienteInfo?.cep;
 
             if (destination_zip_code) {
                 await handleCotar(destination_zip_code);
             } else {
+                // Se o cliente não tiver CEP, pede para digitar manualmente.
+                toast.warn("O cliente selecionado não possui CEP cadastrado.");
                 setPrecisaCep(true);
                 setLoading(false);
             }
         } catch (error) {
-            console.error("Erro ao buscar CEP do cliente:", error);
-            toast.error("Não foi possível buscar o CEP do cliente. Por favor, digite manualmente.");
+            console.error("Erro ao buscar dados do cliente:", error);
+            toast.error("Não foi possível buscar os dados do cliente. Por favor, digite o CEP manualmente.");
             setPrecisaCep(true);
             setLoading(false);
         }
@@ -111,6 +122,8 @@ export default function ModalCotacaoIntelipost({ isOpen, onClose, onSelectFrete,
             setSalvando(false);
             setPrecisaCep(false);
             setCepManual("");
+            // [NOVO] Limpa os dados do cliente ao fechar
+            setDadosCliente(null);
         }
     }, [isOpen]);
 
@@ -172,7 +185,11 @@ export default function ModalCotacaoIntelipost({ isOpen, onClose, onSelectFrete,
                         <FaSearchLocation className="text-5xl text-yellow-500 mx-auto mb-4" />
                         <h3 className="text-xl font-bold text-gray-800">Informe o CEP de Destino</h3>
                         <p className="text-gray-600 mt-2 mb-6">
-                            Para cotar o frete, por favor, digite o CEP de destino.
+                           {/* [ALTERADO] Mensagem mais dinâmica */}
+                           {clienteId && !dadosCliente?.cep 
+                               ? "O cliente não possui CEP. Digite para prosseguir." 
+                               : "Para cotar o frete, por favor, digite o CEP de destino."
+                           }
                         </p>
                         <div className="flex gap-2 justify-center">
                             <input
@@ -196,62 +213,84 @@ export default function ModalCotacaoIntelipost({ isOpen, onClose, onSelectFrete,
 
         if (resultado) {
             return (
-                <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* Coluna da Esquerda: Volumes */}
-                    <div className="p-4 border rounded-lg bg-gray-50">
-                        <h3 className="text-lg font-bold mb-4 text-gray-700">Volumes Calculados ({resultado.volumes.length})</h3>
-                        <div className="space-y-3 max-h-[450px] overflow-y-auto pr-2">
-                            {resultado.volumes.map((volume, index) => (
-                                <div key={index} className="p-3 border rounded-md bg-white">
-                                    <div className="flex justify-between items-center font-bold text-gray-800 mb-2">
-                                        <span>Volume {index + 1}</span>
-                                        <span className="text-teal-600">{volume.weight.toFixed(2)} kg</span>
-                                    </div>
-                                    <div className="text-sm text-gray-600 space-y-1">
-                                        <p>Dimensões: {volume.height} x {volume.width} x {volume.length} cm</p>
-                                        <p>Itens: {volume.products_quantity}</p>
-                                        <p>Valor da mercadoria: {Number(volume.cost_of_goods).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
-                                    </div>
-                                </div>
-                            ))}
+                // [NOVO] Fragment para agrupar o novo card de destino com o grid existente
+                <>
+                    {/* [NOVO] Card com as informações de destino */}
+                    {dadosCliente && (
+                        <div className="mb-6 p-4 border rounded-lg bg-blue-50 border-blue-200">
+                            <h3 className="text-lg font-bold mb-2 text-blue-800 flex items-center gap-2">
+                                <FaMapMarkerAlt />
+                                Destino da Cotação
+                            </h3>
+                            <p className="text-gray-700">
+                                <strong>{dadosCliente.nome_razao || 'Cliente não informado'}</strong>
+                            </p>
+                            <p className="text-gray-600">
+                                {dadosCliente.logradouro}, {dadosCliente.numero} - {dadosCliente.bairro}
+                            </p>
+                            <p className="text-gray-600">
+                                {dadosCliente.cidade} - {dadosCliente.estado}, CEP: {dadosCliente.cep}
+                            </p>
                         </div>
-                    </div>
-                    {/* Coluna da Direita: Fretes */}
-                    <div className="p-4 border rounded-lg bg-gray-50">
-                        <h3 className="text-lg font-bold mb-4 text-gray-700">Opções de Frete</h3>
-                        <div className="space-y-3 max-h-[450px] overflow-y-auto pr-2">
-                            {resultado.cotacao.content.delivery_options?.length > 0 ? (
-                                resultado.cotacao.content.delivery_options.map((opcao) => (
-                                    <div
-                                        key={opcao.delivery_method_id}
-                                        onClick={() => setFreteSelecionado(opcao)}
-                                        className={`p-4 border rounded-md flex flex-wrap items-center justify-between gap-x-4 gap-y-2 cursor-pointer transition-all ${freteSelecionado?.delivery_method_id === opcao.delivery_method_id ? 'bg-teal-50 border-2 border-teal-500' : 'bg-white hover:bg-gray-100'}`}
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <FaTruck className="text-xl text-gray-500" />
-                                            <div>
-                                                <p className="font-bold text-md text-gray-800">{opcao.delivery_method_name}</p>
-                                                <p className="text-xs text-gray-600">Provedor: {opcao.provider_name}</p>
+                    )}
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        {/* Coluna da Esquerda: Volumes */}
+                        <div className="p-4 border rounded-lg bg-gray-50">
+                            <h3 className="text-lg font-bold mb-4 text-gray-700">Volumes Calculados ({resultado.volumes.length})</h3>
+                            <div className="space-y-3 max-h-[350px] overflow-y-auto pr-2">
+                                {resultado.volumes.map((volume, index) => (
+                                    <div key={index} className="p-3 border rounded-md bg-white">
+                                        <div className="flex justify-between items-center font-bold text-gray-800 mb-2">
+                                            <span>Volume {index + 1}</span>
+                                            <span className="text-teal-600">{volume.weight.toFixed(2)} kg</span>
+                                        </div>
+                                        <div className="text-sm text-gray-600 space-y-1">
+                                            <p>Dimensões: {volume.height} x {volume.width} x {volume.length} cm</p>
+                                            <p>Itens: {volume.products_quantity}</p>
+                                            <p>Valor da mercadoria: {Number(volume.cost_of_goods).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        {/* Coluna da Direita: Fretes */}
+                        <div className="p-4 border rounded-lg bg-gray-50">
+                            <h3 className="text-lg font-bold mb-4 text-gray-700">Opções de Frete</h3>
+                            <div className="space-y-3 max-h-[350px] overflow-y-auto pr-2">
+                                {resultado.cotacao.content.delivery_options?.length > 0 ? (
+                                    resultado.cotacao.content.delivery_options.map((opcao) => (
+                                        <div
+                                            key={opcao.delivery_method_id}
+                                            onClick={() => setFreteSelecionado(opcao)}
+                                            className={`p-4 border rounded-md flex flex-wrap items-center justify-between gap-x-4 gap-y-2 cursor-pointer transition-all ${freteSelecionado?.delivery_method_id === opcao.delivery_method_id ? 'bg-teal-50 border-2 border-teal-500' : 'bg-white hover:bg-gray-100'}`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <FaTruck className="text-xl text-gray-500" />
+                                                <div>
+                                                    <p className="font-bold text-md text-gray-800">{opcao.delivery_method_name}</p>
+                                                    <p className="text-xs text-gray-600">Provedor: {opcao.provider_name}</p>
+                                                </div>
+                                            </div>
+                                            <div className="text-center">
+                                                <p className="text-xs text-gray-500">Prazo</p>
+                                                <p className="font-medium">{opcao.delivery_estimate_business_days} dias</p>
+                                            </div>
+                                            <div className="text-center">
+                                                <p className="text-xs text-gray-500">Custo</p>
+                                                <p className="font-bold text-lg text-teal-600">
+                                                    {opcao.final_shipping_cost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                </p>
                                             </div>
                                         </div>
-                                        <div className="text-center">
-                                            <p className="text-xs text-gray-500">Prazo</p>
-                                            <p className="font-medium">{opcao.delivery_estimate_business_days} dias</p>
-                                        </div>
-                                        <div className="text-center">
-                                            <p className="text-xs text-gray-500">Custo</p>
-                                            <p className="font-bold text-lg text-teal-600">
-                                                {opcao.final_shipping_cost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                            </p>
-                                        </div>
-                                    </div>
-                                ))
-                            ) : (
-                                <p className="text-center text-gray-500 py-4">Nenhuma opção de frete foi encontrada.</p>
-                            )}
+                                    ))
+                                ) : (
+                                    <p className="text-center text-gray-500 py-4">Nenhuma opção de frete foi encontrada.</p>
+                                )}
+                            </div>
                         </div>
                     </div>
-                </div>
+                </>
             );
         }
 
