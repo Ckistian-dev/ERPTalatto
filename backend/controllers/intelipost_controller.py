@@ -184,7 +184,7 @@ def get_cliente_cep(cliente_id: int):
             SELECT 
                 nome_razao, logradouro, numero, bairro, cidade, estado, cep 
             FROM cadastros 
-            WHERE id = %s AND tipo_cadastro = 'Cliente'
+            WHERE id = %s
         """, (cliente_id,))
         
         cliente = cursor.fetchone()
