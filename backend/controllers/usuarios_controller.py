@@ -80,7 +80,7 @@ class UsuarioUpdate(BaseModel):
 
 router = APIRouter(prefix="/api/usuarios", tags=["Usuários"])
 
-@router.post("/", response_model=UsuarioResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=UsuarioResponse, status_code=status.HTTP_201_CREATED)
 def criar_usuario(usuario_data: UsuarioCreate, db: Session = Depends(get_db)):
     # ... (código de criar usuário)
     db_usuario = db.query(Usuario).filter(Usuario.email == usuario_data.email).first()
