@@ -24,7 +24,6 @@ def consultar_cnpj(cnpj: str):
         raise HTTPException(status_code=503, detail=f"Erro ao conectar com o serviço de CNPJ: {e}")
 
 
-# --- NOVA ABORDAGEM: Endpoint de consulta de IE usando CNPJ.ws ---
 @router.get("/consulta/ie")
 def consultar_inscricao_estadual(documento: str, uf: str):
     """
