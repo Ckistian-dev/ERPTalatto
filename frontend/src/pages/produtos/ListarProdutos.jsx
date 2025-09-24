@@ -231,7 +231,7 @@ export default function ListarProdutos() {
                 </div>
 
                 <div className="overflow-x-auto bg-white rounded-lg shadow">
-                    <table className="w-full table-auto whitespace-nowrap">
+                    <table className="w-full table-auto whitespace-normal">
                         <thead>
                             <tr className="bg-gray-100 text-left text-sm font-semibold text-gray-600">
                                 {colunasVisiveis.map(col => <th key={col} className="p-3 border-b-2">{col.replace(/_/g, ' ').toUpperCase()}</th>)}

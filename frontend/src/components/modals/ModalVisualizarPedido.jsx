@@ -7,7 +7,7 @@ import { toast } from 'react-toastify';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL;
 
-// --- DADOS DAS EMPRESAS PARA SELEÇÃO ---
+// --- DADOS DAS EMPRESAS (sem alterações) ---
 const empresasDisponiveis = [
     {
         id: 'industria',
@@ -60,14 +60,18 @@ const pedidoVazio = {
 // =================================================================================
 const faixasDescontoDefinidas = [120, 60, 50, 48, 40, 36, 30, 25, 24, 20, 18, 12, 10, 8, 7, 6, 5, 4, 3, 2];
 
-const getPriceConfig = (tabelaPrecoId, precosDisponiveis) => {
-    if (!precosDisponiveis || !tabelaPrecoId) return null;
+// [CORREÇÃO 1 de 3] - Função getPriceConfig agora aceita e utiliza o 'produtoId'
+const getPriceConfig = (tabelaPrecoId, produtoId, precosDisponiveis) => {
+    if (!precosDisponiveis || !tabelaPrecoId || !produtoId) return null;
     const searchTerm = String(tabelaPrecoId).trim().toLowerCase();
+    
     const precoEncontrado = precosDisponiveis.find(p => {
-        const idStr = p.id ? String(p.id).trim().toLowerCase() : '';
-        const nomeStr = p.nome ? String(p.nome).trim().toLowerCase() : '';
-        return idStr === searchTerm || nomeStr === searchTerm;
+        const idMatches = (p.id ? String(p.id).trim().toLowerCase() : '') === searchTerm;
+        const nameMatches = (p.nome ? String(p.nome).trim().toLowerCase() : '') === searchTerm;
+        // Garante que a tabela de preço pertence ao produto correto
+        return p.produto_id === produtoId && (idMatches || nameMatches);
     });
+
     return precoEncontrado ? precoEncontrado.config : null;
 };
 
@@ -81,9 +85,12 @@ const getDescontoAplicado = (quantidade, descontos) => {
     return 0;
 };
 
+// [CORREÇÃO 2 de 3] - Função calcularValoresItem agora passa o 'produto_id' para getPriceConfig
 const calcularValoresItem = (item, precosDisponiveis) => {
-    const priceConfig = getPriceConfig(item.tabela_preco_id, precosDisponiveis);
+    // Passa o ID do produto do item para a busca da configuração de preço
+    const priceConfig = getPriceConfig(item.tabela_preco_id, item.produto_id, precosDisponiveis);
     const quantidade = Number(item.quantidade_itens) || 1;
+
     if (!priceConfig || typeof priceConfig.valor === 'undefined') {
         const subtotalSalvo = Number(item.subtotal) || 0;
         return { ...item, preco_unitario: quantidade > 0 ? subtotalSalvo / quantidade : 0, total_com_desconto: subtotalSalvo };
@@ -94,8 +101,9 @@ const calcularValoresItem = (item, precosDisponiveis) => {
     return { ...item, preco_unitario: precoUnitarioFinal, total_com_desconto: precoUnitarioFinal * quantidade };
 };
 
+
 // =================================================================================
-// COMPONENTES DE VISUALIZAÇÃO
+// COMPONENTES DE VISUALIZAÇÃO (sem alterações)
 // =================================================================================
 function formatarValor(valor) {
     const numero = Number(valor);
@@ -281,6 +289,7 @@ export default function ModalVisualizarPedido({ pedido = pedidoVazio, onClose })
         } catch (e) { return []; }
     }, [pedido.lista_itens]);
 
+    // [CORREÇÃO 3 de 3] - Lógica de busca de dados foi ajustada para enriquecer os preços com 'produto_id'
     useEffect(() => {
         if (view === 'visualizar_orcamento') {
             const carregarDadosEssenciais = async () => {
@@ -291,25 +300,27 @@ export default function ModalVisualizarPedido({ pedido = pedidoVazio, onClose })
                 
                 setLoading(true);
                 try {
-                    const promessaProdutos = axios.get(`${API_URL}/produtos_dropdown`);
-                    const promessasPrecos = itensOriginais.map(item =>
+                    // Busca produtos (sem alteração)
+                    const produtosRes = await axios.get(`${API_URL}/produtos_dropdown`);
+                    setProdutosDisponiveis(produtosRes.data);
+
+                    // Busca os preços para cada item individualmente
+                    const pricePromises = itensOriginais.map(item =>
                         axios.get(`${API_URL}/tabela_precos_por_produto?produto_id=${item.produto_id}`)
                     );
+                    const priceResponses = await Promise.all(pricePromises);
 
-                    const [produtosRes, ...respostasPrecos] = await Promise.all([
-                        promessaProdutos,
-                        ...promessasPrecos
-                    ]);
-
-                    setProdutosDisponiveis(produtosRes.data);
-                    const todasAsTabelas = respostasPrecos.flatMap(res => res.data);
-                    const tabelasUnicas = new Map();
-                    todasAsTabelas.forEach(tabela => {
-                        if (!tabelasUnicas.has(tabela.id)) {
-                            tabelasUnicas.set(tabela.id, tabela);
-                        }
+                    // Mapeia as respostas, adicionando o ID do produto a cada tabela de preço
+                    const allPriceConfigs = priceResponses.flatMap((res, index) => {
+                        const productId = itensOriginais[index].produto_id; // Pega o ID do produto correspondente
+                        const pricesForProduct = res.data || [];
+                        return pricesForProduct.map(priceInfo => ({
+                            ...priceInfo,
+                            produto_id: productId // Adiciona o ID do produto para evitar colisões
+                        }));
                     });
-                    setPrecosDisponiveis(Array.from(tabelasUnicas.values()));
+
+                    setPrecosDisponiveis(allPriceConfigs);
 
                 } catch (error) {
                     toast.error("Erro ao carregar dados para visualização.");
@@ -321,6 +332,7 @@ export default function ModalVisualizarPedido({ pedido = pedidoVazio, onClose })
             carregarDadosEssenciais();
         }
     }, [view, itensOriginais]);
+
 
     const handleContinuar = () => {
         const empresa = empresasDisponiveis.find(e => e.id === empresaIdTemporaria);
@@ -414,7 +426,7 @@ export default function ModalVisualizarPedido({ pedido = pedidoVazio, onClose })
                     )}
                 </div>
                 <div className="flex-shrink-0 p-3 bg-gray-50 border-t rounded-b-lg flex justify-between items-center no-print">
-                     <button onClick={onClose} className="text-gray-600 hover:text-gray-900 text-sm font-medium py-1.5 px-3 rounded-md">Fechar</button>
+                       <button onClick={onClose} className="text-gray-600 hover:text-gray-900 text-sm font-medium py-1.5 px-3 rounded-md">Fechar</button>
                     <button onClick={gerarPDF} disabled={loading} className="bg-red-700 hover:bg-red-800 text-white font-bold py-1.5 px-3 rounded-md flex items-center gap-2 transition-colors duration-200 text-sm disabled:opacity-50 disabled:cursor-not-allowed"><FaFilePdf /> Baixar PDF</button>
                 </div>
             </div>
