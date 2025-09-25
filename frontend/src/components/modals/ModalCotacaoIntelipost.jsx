@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
-// [NOVO] Importado o ícone de localização
+// Importado o ícone de localização
 import { FaTruck, FaSave, FaTimes, FaSearchLocation, FaMapMarkerAlt } from 'react-icons/fa';
 
 import ButtonComPermissao from "@/components/buttons/ButtonComPermissao";
@@ -16,11 +16,12 @@ export default function ModalCotacaoIntelipost({ isOpen, onClose, onSelectFrete,
     const [precisaCep, setPrecisaCep] = useState(false);
     const [cepManual, setCepManual] = useState("");
     
-    // [NOVO] Estado para armazenar os dados do cliente
+    // Estado para armazenar os dados do cliente ou da localização do CEP
     const [dadosCliente, setDadosCliente] = useState(null);
 
     /**
      * Função principal que realiza a cotação na API da Intelipost.
+     * [ALTERADO] Agora também busca dados de endereço via API de CEP quando não há cliente.
      * @param {string} cepDestino - O CEP para onde o frete será calculado.
      */
     const handleCotar = async (cepDestino) => {
@@ -41,8 +42,51 @@ export default function ModalCotacaoIntelipost({ isOpen, onClose, onSelectFrete,
         setPrecisaCep(false);
 
         try {
+            const cepLimpo = cepDestino.replace(/\D/g, '');
+
+            // [NOVO] Lógica para buscar dados do CEP se não houver clienteId
+            // Isso garante que o card de destino seja exibido mesmo para cotações manuais.
+            if (!clienteId) {
+                try {
+                    const viaCepRes = await axios.get(`https://viacep.com.br/ws/${cepLimpo}/json/`);
+                    if (viaCepRes.data && !viaCepRes.data.erro) {
+                        const { logradouro, bairro, localidade, uf, cep } = viaCepRes.data;
+                        setDadosCliente({
+                            nome_razao: 'Destino Informado via CEP', // Nome genérico
+                            logradouro: logradouro || 'N/A',
+                            numero: '', // API de CEP não retorna número
+                            bairro: bairro || 'N/A',
+                            cidade: localidade || '',
+                            estado: uf || '',
+                            cep: cep || cepDestino
+                        });
+                    } else {
+                        // Se o CEP for inválido, preenchemos com o mínimo para exibição.
+                        setDadosCliente({
+                            nome_razao: 'Destino Informado via CEP',
+                            cep: cepDestino,
+                            logradouro: 'Endereço não encontrado',
+                            bairro: '',
+                            cidade: '', 
+                            estado: ''
+                        });
+                    }
+                } catch (cepError) {
+                    console.warn("Não foi possível buscar detalhes do CEP:", cepError);
+                    // Em caso de erro na API de CEP, preenchemos o básico para a cotação continuar.
+                    setDadosCliente({
+                        nome_razao: 'Destino Informado via CEP',
+                        cep: cepDestino,
+                        logradouro: 'Não foi possível carregar o endereço',
+                        bairro: '',
+                        cidade: '',
+                        estado: ''
+                    });
+                }
+            }
+
             const payload = {
-                destination_zip_code: cepDestino.replace(/\D/g, ''),
+                destination_zip_code: cepLimpo,
                 items: itens.map(item => ({
                     produto_id: item.produto_id,
                     quantidade_itens: item.quantidade_itens
@@ -84,12 +128,10 @@ export default function ModalCotacaoIntelipost({ isOpen, onClose, onSelectFrete,
         }
 
         try {
-            // [ALTERADO] A API agora deve retornar o objeto completo do cliente, não apenas o CEP.
-            // Isso permite popular o card de informações de destino.
             const res = await axios.get(`${API_URL}/intelipost/cliente_cep/${clienteId}`);
-            const clienteInfo = res.data; // Espera-se um objeto como: { nome_razao, logradouro, cep, ... }
+            const clienteInfo = res.data; 
             
-            // [NOVO] Armazena os dados do cliente no estado
+            // Armazena os dados do cliente no estado
             setDadosCliente(clienteInfo); 
 
             const destination_zip_code = clienteInfo?.cep;
@@ -97,7 +139,6 @@ export default function ModalCotacaoIntelipost({ isOpen, onClose, onSelectFrete,
             if (destination_zip_code) {
                 await handleCotar(destination_zip_code);
             } else {
-                // Se o cliente não tiver CEP, pede para digitar manualmente.
                 toast.warn("O cliente selecionado não possui CEP cadastrado.");
                 setPrecisaCep(true);
                 setLoading(false);
@@ -122,7 +163,7 @@ export default function ModalCotacaoIntelipost({ isOpen, onClose, onSelectFrete,
             setSalvando(false);
             setPrecisaCep(false);
             setCepManual("");
-            // [NOVO] Limpa os dados do cliente ao fechar
+            // Limpa os dados do cliente/localização ao fechar
             setDadosCliente(null);
         }
     }, [isOpen]);
@@ -185,11 +226,10 @@ export default function ModalCotacaoIntelipost({ isOpen, onClose, onSelectFrete,
                         <FaSearchLocation className="text-5xl text-yellow-500 mx-auto mb-4" />
                         <h3 className="text-xl font-bold text-gray-800">Informe o CEP de Destino</h3>
                         <p className="text-gray-600 mt-2 mb-6">
-                           {/* [ALTERADO] Mensagem mais dinâmica */}
                            {clienteId && !dadosCliente?.cep 
-                               ? "O cliente não possui CEP. Digite para prosseguir." 
-                               : "Para cotar o frete, por favor, digite o CEP de destino."
-                           }
+                                ? "O cliente não possui CEP. Digite para prosseguir." 
+                                : "Para cotar o frete, por favor, digite o CEP de destino."
+                            }
                         </p>
                         <div className="flex gap-2 justify-center">
                             <input
@@ -213,9 +253,8 @@ export default function ModalCotacaoIntelipost({ isOpen, onClose, onSelectFrete,
 
         if (resultado) {
             return (
-                // [NOVO] Fragment para agrupar o novo card de destino com o grid existente
                 <>
-                    {/* [NOVO] Card com as informações de destino */}
+                    {/* Card com as informações de destino (agora funciona para ambos os casos) */}
                     {dadosCliente && (
                         <div className="mb-6 p-4 border rounded-lg bg-blue-50 border-blue-200">
                             <h3 className="text-lg font-bold mb-2 text-blue-800 flex items-center gap-2">
@@ -226,7 +265,7 @@ export default function ModalCotacaoIntelipost({ isOpen, onClose, onSelectFrete,
                                 <strong>{dadosCliente.nome_razao || 'Cliente não informado'}</strong>
                             </p>
                             <p className="text-gray-600">
-                                {dadosCliente.logradouro}, {dadosCliente.numero} - {dadosCliente.bairro}
+                                {dadosCliente.logradouro}{dadosCliente.numero ? `, ${dadosCliente.numero}` : ''}{dadosCliente.bairro ? ` - ${dadosCliente.bairro}`: ''}
                             </p>
                             <p className="text-gray-600">
                                 {dadosCliente.cidade} - {dadosCliente.estado}, CEP: {dadosCliente.cep}
