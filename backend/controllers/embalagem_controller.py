@@ -50,6 +50,7 @@ class RegraSchema(BaseModel):
     condicao_gatilho: str
     valor_gatilho: Optional[Union[float, int, str]] = None
     prioridade: int = 0
+    formula_itens: List[FormulaComponentSchema]
     formula_altura: List[FormulaComponentSchema]
     formula_largura: List[FormulaComponentSchema]
     formula_comprimento: List[FormulaComponentSchema]
@@ -89,27 +90,54 @@ class PaginatedResponse(BaseModel):
 #               MOTOR DE CÁLCULO DE FÓRMULAS (Sem alterações)
 # ===================================================================
 def executar_formula(formula: List[Dict[str, Any]], contexto: Dict[str, float]) -> float:
-    # ... (A lógica interna do motor de cálculo já era robusta e não precisa de alterações)
     if not formula:
         return 0.0
-    valores, operadores, precedencia = [], [], {'+': 1, '-': 1, '*': 2, '/': 2}
+    
+    valores, operadores = [], []
+    precedencia = {'+': 1, '-': 1, '*': 2, '/': 2}
+
     def aplicar_operador():
-        op, right, left = operadores.pop(), valores.pop(), valores.pop()
+        op = operadores.pop()
+        right = valores.pop()
+        left = valores.pop()
         if op == '+': valores.append(left + right)
         elif op == '-': valores.append(left - right)
         elif op == '*': valores.append(left * right)
         elif op == '/': valores.append(left / right if right != 0 else 0)
+
     for comp in formula:
         tipo, valor = comp['tipo'], comp['valor']
-        if tipo == 'numero': valores.append(float(valor))
+        
+        if tipo == 'numero':
+            valores.append(float(valor))
         elif tipo == 'variavel':
-            if valor not in contexto: raise ValueError(f"Variável de contexto '{valor}' não encontrada.")
+            if valor not in contexto:
+                raise ValueError(f"Variável de contexto '{valor}' não encontrada.")
             valores.append(float(contexto[valor]))
+        
+        # --- LÓGICA ATUALIZADA AQUI ---
+        elif valor == '(':
+            operadores.append(valor)
+        elif valor == ')':
+            while operadores and operadores[-1] != '(':
+                aplicar_operador()
+            if operadores and operadores[-1] == '(':
+                operadores.pop() # Remove o '(' correspondente
+            else:
+                raise ValueError("Parênteses não correspondidos na fórmula.")
+        # --- FIM DA LÓGICA ATUALIZADA ---
+
         elif tipo == 'operador':
-            while operadores and operadores[-1] in precedencia and precedencia.get(operadores[-1], 0) >= precedencia.get(valor, 0):
+            while (operadores and operadores[-1] != '(' and 
+                   precedencia.get(operadores[-1], 0) >= precedencia.get(valor, 0)):
                 aplicar_operador()
             operadores.append(valor)
-    while operadores: aplicar_operador()
+
+    while operadores:
+        if operadores[-1] == '(':
+             raise ValueError("Parênteses não correspondidos na fórmula.")
+        aplicar_operador()
+
     return round(valores[0], 4) if valores else 0.0
 
 # ===================================================================
@@ -181,7 +209,7 @@ def deletar_logica(logica_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 # --- Endpoint para Cálculo de Volume (ATUALIZADO) ---
-@router.post("/calcular-volumes", response_model=CalculoVolumeResponse, summary="Calcula os volumes de um produto")
+@router.post("/calcular-volumes", response_model=CalculoVolumeResponse, summary="Calcula os volumes de um produto com base em regras dinâmicas")
 def calcular_volumes_produto(req: CalculoVolumeRequest):
     if req.quantidade <= 0:
         raise HTTPException(status_code=400, detail="A quantidade deve ser maior que zero.")
@@ -192,8 +220,7 @@ def calcular_volumes_produto(req: CalculoVolumeRequest):
     try:
         query = """
             SELECT 
-                p.unidade_caixa, p.peso_embalagem, p.altura_embalagem, 
-                p.largura_embalagem, p.comprimento_embalagem,
+                p.peso_produto, p.altura_produto, p.largura_produto, p.comprimento_produto,
                 e.regras
             FROM produtos p
             LEFT JOIN embalagem e ON p.id_logica_embalagem = e.id
@@ -205,95 +232,85 @@ def calcular_volumes_produto(req: CalculoVolumeRequest):
         if not produto_data:
             raise HTTPException(status_code=404, detail="Produto não encontrado.")
 
-        # --- DADOS BASE EXTRAÍDOS DO PRODUTO ---
-        unidade_caixa = int(produto_data.get('unidade_caixa') or 0)
-        peso_embalagem_g = float(produto_data.get('peso_embalagem') or 0)
-        altura_embalagem_cm = float(produto_data.get('altura_embalagem') or 0)
-        largura_embalagem_cm = float(produto_data.get('largura_embalagem') or 0)
-        comprimento_embalagem_cm = float(produto_data.get('comprimento_embalagem') or 0)
+        peso_item_g = float(produto_data.get('peso_produto') or 0)
+        altura_item_cm = float(produto_data.get('altura_produto') or 0)
+        largura_item_cm = float(produto_data.get('largura_produto') or 0)
+        comprimento_item_cm = float(produto_data.get('comprimento_produto') or 0)
         
-        if not all([unidade_caixa, peso_embalagem_g, altura_embalagem_cm, largura_embalagem_cm, comprimento_embalagem_cm]):
-            raise HTTPException(status_code=400, detail="Produto com dados de embalagem padrão incompletos.")
-        if unidade_caixa <= 0:
-            raise HTTPException(status_code=400, detail="A 'unidade_caixa' do produto deve ser maior que zero.")
+        if not all([peso_item_g, altura_item_cm, largura_item_cm, comprimento_item_cm]):
+            raise HTTPException(status_code=400, detail="Produto com dados dimensionais (peso, altura, largura, comprimento) incompletos ou zerados.")
+
+        regras_json = produto_data.get('regras')
+        regras = json.loads(regras_json) if isinstance(regras_json, str) else regras_json
+        
+        if not regras:
+            raise HTTPException(status_code=400, detail="Nenhuma lógica de embalagem ou regras associadas a este produto.")
+
+        regras_sorted = sorted(regras, key=lambda r: r.get('prioridade', 0), reverse=True)
 
         volumes_finais = []
-        volumes_cheios = req.quantidade // unidade_caixa
-        quantidade_restante = req.quantidade % unidade_caixa
+        quantidade_a_processar = req.quantidade
         
-        # Adiciona os volumes completos (caixas cheias)
-        for _ in range(volumes_cheios):
-            volumes_finais.append(VolumeCalculadoSchema(
-                tipo="Volume Completo", itens=unidade_caixa, peso_kg=(peso_embalagem_g / 1000.0),
-                altura_cm=altura_embalagem_cm, largura_cm=largura_embalagem_cm, comprimento_cm=comprimento_embalagem_cm
-            ))
+        # --- LÓGICA DE LOOP "GANANCIOSO" ---
+        # Continua enquanto houver itens para embalar
+        while quantidade_a_processar > 0:
+            regra_foi_aplicada = False
             
-        # Calcula o volume parcial, se houver itens restantes
-        if quantidade_restante > 0:
-            regras_json = produto_data.get('regras')
-            regras = json.loads(regras_json) if isinstance(regras_json, str) else regras_json
-            
-            # --- CÁLCULO DAS VARIÁVEIS PROPORCIONAIS (REGRA DE 3) ---
-            # A lógica é: (Valor da embalagem cheia / Itens na embalagem cheia) * Itens restantes
-            peso_proporcional_kg = ( (peso_embalagem_g / 1000.0) / unidade_caixa) * quantidade_restante
-            altura_proporcional_cm = (altura_embalagem_cm / unidade_caixa) * quantidade_restante
-            largura_proporcional_cm = (largura_embalagem_cm / unidade_caixa) * quantidade_restante
-            comprimento_proporcional_cm = (comprimento_embalagem_cm / unidade_caixa) * quantidade_restante
+            # A cada loop, tenta aplicar as regras desde a de maior prioridade
+            for regra in regras_sorted:
+                # Verifica se a condição da regra é atendida pela quantidade restante
+                if avaliar_condicao(regra.get('condicao_gatilho'), regra.get('valor_gatilho'), quantidade_a_processar):
+                    
+                    # Se a condição for atendida, APLICA A REGRA e sai do loop interno
+                    try:
+                        contexto = {
+                            "QTD_A_PROCESSAR": float(quantidade_a_processar),
+                            "QTD_TOTAL_PEDIDO": float(req.quantidade),
+                            "PESO_ITEM_UNICO": peso_item_g / 1000.0,
+                            "ALTURA_ITEM_UNICO": altura_item_cm,
+                            "LARGURA_ITEM_UNICO": largura_item_cm,
+                            "COMPRIMENTO_ITEM_UNICO": comprimento_item_cm,
+                            "ACRESCIMO_EMBALAGEM": 2.0
+                        }
 
-            # --- CRIAÇÃO DO CONTEXTO PARA O MOTOR DE FÓRMULAS ---
-            # Este dicionário alimenta as fórmulas com os valores calculados.
-            contexto = {
-                "QTD_RESTANTE": float(quantidade_restante),
-                "QTD_EMBALAGEM": float(unidade_caixa),
-                
-                "PESO_EMBALAGEM": float(peso_embalagem_g / 1000.0), # Em Kg
-                "ALTURA_EMBALAGEM": float(altura_embalagem_cm),
-                "LARGURA_EMBALAGEM": float(largura_embalagem_cm),
-                "COMPRIMENTO_EMBALAGEM": float(comprimento_embalagem_cm),
-                
-                "PESO_PROPORCIONAL": float(peso_proporcional_kg),
-                "ALTURA_PROPORCIONAL": float(altura_proporcional_cm),
-                "LARGURA_PROPORCIONAL": float(largura_proporcional_cm),
-                "COMPRIMENTO_PROPORCIONAL": float(comprimento_proporcional_cm),
-                
-                "ACRESCIMO_EMBALAGEM": 2.0 # Valor fixo (2cm), conforme padrão definido no frontend.
-            }
+                        if not regra.get('formula_itens'):
+                             raise ValueError("A regra não possui 'formula_itens'.")
+                        
+                        itens_neste_volume = executar_formula(regra['formula_itens'], contexto)
+                        itens_neste_volume = int(max(1, min(itens_neste_volume, quantidade_a_processar)))
 
-            regra_aplicada = None
-            if regras:
-                regras_sorted = sorted(regras, key=lambda r: r.get('prioridade', 0), reverse=True)
-                for regra in regras_sorted:
-                    if avaliar_condicao(regra.get('condicao_gatilho'), regra.get('valor_gatilho'), quantidade_restante):
-                        regra_aplicada = regra
-                        break 
-            
-            # Valores padrão se nenhuma regra for aplicada (usamos os da embalagem cheia)
-            altura_p = contexto["ALTURA_EMBALAGEM"]
-            largura_p = contexto["LARGURA_EMBALAGEM"]
-            comp_p = contexto["COMPRIMENTO_EMBALAGEM"]
-            peso_p = contexto["PESO_PROPORCIONAL"]
-            
-            if regra_aplicada:
-                try:
-                    if regra_aplicada.get('formula_altura'): altura_p = executar_formula(regra_aplicada['formula_altura'], contexto)
-                    if regra_aplicada.get('formula_largura'): largura_p = executar_formula(regra_aplicada['formula_largura'], contexto)
-                    if regra_aplicada.get('formula_comprimento'): comp_p = executar_formula(regra_aplicada['formula_comprimento'], contexto)
-                    if regra_aplicada.get('formula_peso'): peso_p = executar_formula(regra_aplicada['formula_peso'], contexto)
-                except ValueError as e:
-                    raise HTTPException(status_code=400, detail=f"Erro ao processar fórmula: {e}")
-            
-            volumes_finais.append(VolumeCalculadoSchema(
-                tipo="Volume Parcial", itens=quantidade_restante, peso_kg=round(peso_p, 3),
-                altura_cm=round(altura_p, 2), largura_cm=round(largura_p, 2), comprimento_cm=round(comp_p, 2)
-            ))
-            
+                        contexto["QTD_NESTE_VOLUME"] = float(itens_neste_volume)
+
+                        altura_p = executar_formula(regra['formula_altura'], contexto)
+                        largura_p = executar_formula(regra['formula_largura'], contexto)
+                        comp_p = executar_formula(regra['formula_comprimento'], contexto)
+                        peso_p = executar_formula(regra['formula_peso'], contexto)
+
+                    except (ValueError, KeyError) as e:
+                        raise HTTPException(status_code=400, detail=f"Erro ao processar fórmula da regra: {e}")
+
+                    volumes_finais.append(VolumeCalculadoSchema(
+                        tipo="Volume",
+                        itens=itens_neste_volume,
+                        peso_kg=round(peso_p, 4),
+                        altura_cm=round(altura_p, 2),
+                        largura_cm=round(largura_p, 2),
+                        comprimento_cm=round(comp_p, 2)
+                    ))
+                    
+                    quantidade_a_processar -= itens_neste_volume
+                    regra_foi_aplicada = True
+                    break # <-- PONTO CHAVE: Sai do 'for' e força o 'while' a recomeçar do zero
+
+            # Se o 'for' terminar e nenhuma regra tiver sido aplicada, significa que algo está errado
+            if not regra_foi_aplicada:
+                raise HTTPException(status_code=400, detail=f"Loop infinito detectado. Nenhuma regra aplicável para a quantidade restante de {quantidade_a_processar}. Verifique se existe uma regra 'Sempre Aplicar' com prioridade baixa.")
+
         return CalculoVolumeResponse(
             total_volumes=len(volumes_finais),
-            peso_total_kg=round(sum(v.peso_kg for v in volumes_finais), 3),
+            peso_total_kg=round(sum(v.peso_kg for v in volumes_finais), 4),
             volumes=volumes_finais
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro interno no servidor: {str(e)}")
     finally:
         if 'cursor' in locals() and cursor: cursor.close()
         if 'conn' in locals() and conn: conn.close()

@@ -8,7 +8,7 @@ const TODAS_AS_VARIAVEIS = [
     { valor: 'QTD_A_PROCESSAR', nome: 'Qtd. a Processar' },
     { valor: 'QTD_TOTAL_PEDIDO', nome: 'Qtd. Total do Pedido' },
     { valor: 'QTD_NESTE_VOLUME', nome: 'Qtd. Itens Neste Volume' },
-    
+
     // --- Variáveis do Produto Individual (Fonte da Verdade) ---
     { valor: 'PESO_ITEM_UNICO', nome: 'Peso (kg) do Item' },
     { valor: 'ALTURA_ITEM_UNICO', nome: 'Altura (cm) do Item' },
@@ -19,7 +19,7 @@ const TODAS_AS_VARIAVEIS = [
     { valor: 'ACRESCIMO_EMBALAGEM', nome: 'Acréscimo Fixo (padrão: 2)' },
 ];
 
-const OPERADORES_DISPONIVEIS = ['+', '-', '*', '/'];
+const OPERADORES_DISPONIVEIS = ['+', '-', '*', '/', '(', ')'];
 
 // Hook customizado para detectar cliques fora de um elemento (sem alterações)
 function useOnClickOutside(ref, handler) {
@@ -56,7 +56,7 @@ export default function ConstrutorFormula({ label, formula, onChange, variaveisD
         if (valor === '' || valor === null || valor === undefined) return;
         const novoComponente = { tipo, valor: tipo === 'numero' ? parseFloat(valor) : valor };
         onChange([...formula, novoComponente]);
-        
+
         if (tipo === 'numero') {
             setNumeroInput(''); // Limpa o input de número após adicionar
         }
@@ -74,7 +74,7 @@ export default function ConstrutorFormula({ label, formula, onChange, variaveisD
     return (
         <div className="mb-2">
             <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-            
+
             <div className="relative flex flex-wrap items-center gap-2 p-2 border rounded-md min-h-[42px] bg-gray-50">
                 {formula.map((comp, index) => (
                     <div key={index} className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-gray-200 text-gray-800 text-sm font-medium">
@@ -88,13 +88,13 @@ export default function ConstrutorFormula({ label, formula, onChange, variaveisD
                         </button>
                     </div>
                 ))}
-                
+
                 <button type="button" onClick={() => setMostraSeletor(s => !s)} className="text-teal-600 hover:text-teal-800 transition-colors ml-1 p-1 rounded-full hover:bg-teal-100">
                     <FaPlus />
                 </button>
 
                 {mostraSeletor && (
-                    <div 
+                    <div
                         ref={seletorRef}
                         className="absolute top-full left-0 mt-2 z-20 w-full sm:w-80 bg-white border border-gray-300 rounded-lg shadow-xl p-4"
                     >
@@ -104,12 +104,12 @@ export default function ConstrutorFormula({ label, formula, onChange, variaveisD
                                 <FaTimes />
                             </button>
                         </div>
-                        
+
                         <div className="space-y-4">
                             <div>
                                 <label className="text-xs font-bold text-gray-600 uppercase">Variável</label>
-                                <select 
-                                    onChange={(e) => adicionarComponente('variavel', e.target.value)} 
+                                <select
+                                    onChange={(e) => adicionarComponente('variavel', e.target.value)}
                                     className="w-full p-2 border border-gray-300 rounded mt-1 text-sm focus:ring-teal-500 focus:border-teal-500"
                                     value="" // Sempre reseta para o placeholder
                                 >
@@ -121,9 +121,10 @@ export default function ConstrutorFormula({ label, formula, onChange, variaveisD
                                 <label className="text-xs font-bold text-gray-600 uppercase">Operador</label>
                                 <div className="grid grid-cols-4 gap-2 mt-1">
                                     {OPERADORES_DISPONIVEIS.map(op => (
-                                        <button 
-                                            key={op} 
+                                        <button
+                                            key={op}
                                             type="button"
+                                            // Para os parênteses, o 'tipo' também é 'operador', o backend vai saber diferenciar
                                             onClick={() => adicionarComponente('operador', op)}
                                             className="py-2 text-center border rounded bg-gray-100 hover:bg-teal-500 hover:text-white font-mono text-lg transition-colors"
                                         >
@@ -135,17 +136,17 @@ export default function ConstrutorFormula({ label, formula, onChange, variaveisD
                             <div>
                                 <label className="text-xs font-bold text-gray-600 uppercase">Número</label>
                                 <div className="flex items-center gap-2 mt-1">
-                                    <input 
-                                        type="number" 
+                                    <input
+                                        type="number"
                                         step="any"
                                         value={numeroInput}
                                         onChange={(e) => setNumeroInput(e.target.value)}
-                                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); adicionarComponente('numero', numeroInput, false); }}}
-                                        className="flex-grow p-2 border border-gray-300 rounded text-sm focus:ring-teal-500 focus:border-teal-500" 
+                                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); adicionarComponente('numero', numeroInput, false); } }}
+                                        className="flex-grow p-2 border border-gray-300 rounded text-sm focus:ring-teal-500 focus:border-teal-500"
                                         placeholder="Ex: 2.5"
                                     />
-                                    <button 
-                                        type="button" 
+                                    <button
+                                        type="button"
                                         onClick={() => adicionarComponente('numero', numeroInput, false)}
                                         className="px-3 py-2 bg-teal-600 text-white rounded hover:bg-teal-700 text-sm font-semibold"
                                     >

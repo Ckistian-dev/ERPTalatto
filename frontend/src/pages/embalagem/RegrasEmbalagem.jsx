@@ -43,11 +43,16 @@ const criarNovaRegra = () => ({
     _tipo_regra_ui: 'PADRAO' // Campo auxiliar apenas para controle da interface
 });
 
-// Opções de gatilho atualizadas
+// --- OPÇÕES DE GATILHO RESTAURADAS ---
 const OPCOES_GATILHO = [
     { valor: 'VOLUME_COMPLETO', texto: 'Volume Completo (definir quantidade)' },
     { valor: 'SEMPRE', texto: 'Sempre Aplicar (para o que sobrar)' },
+    { valor: 'MAIOR_IGUAL_A', texto: 'Qtd. a Embalar >= (Maior ou Igual a)' },
+    { valor: 'IGUAL_A', texto: 'Qtd. a Embalar = (Igual a)' },
+    { valor: 'MENOR_QUE', texto: 'Qtd. a Embalar < (Menor que)' },
+    { valor: 'ENTRE', texto: 'Qtd. a Embalar ENTRE (ex: 5,10)' },
 ];
+
 
 export default function CadastroLogicaEmbalagem({ modo = 'novo' }) {
     const navigate = useNavigate();
@@ -244,7 +249,7 @@ export default function CadastroLogicaEmbalagem({ modo = 'novo' }) {
                                             name="valor_gatilho"
                                             value={regra.valor_gatilho}
                                             onChange={(e) => handleRegraChange(index, 'valor_gatilho', e.target.value)}
-                                            placeholder={regra.condicao_gatilho === 'ENTRE' ? 'Ex: 5,13' : 'Ex: 10'}
+                                            placeholder={regra.condicao_gatilho === 'ENTRE' ? 'Ex: 5,10' : 'Ex: 10'}
                                         />
                                     )}
 
