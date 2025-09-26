@@ -134,9 +134,9 @@ export default function CadastroProduto({ modo = "novo" }) {
 
     // Remove campos que não devem ser enviados se estiverem vazios (Ex: subgrupos)
     Object.keys(dadosParaEnvio).forEach(key => {
-        if (dadosParaEnvio[key] === '' || dadosParaEnvio[key] === null) {
-            delete dadosParaEnvio[key];
-        }
+      if (dadosParaEnvio[key] === '' || dadosParaEnvio[key] === null) {
+        delete dadosParaEnvio[key];
+      }
     });
 
 
@@ -173,24 +173,6 @@ export default function CadastroProduto({ modo = "novo" }) {
             <CampoTextarea label="Descrição" name="descricao" value={form.descricao || ""} onChange={handleChange} colSpan obrigatorio placeholder="Ex: Painel Ripado de Madeira Nobre" />
             <CampoDropdownEditavel label="Unidade" name="unidade" value={form.unidade || ""} onChange={handleChange} tipo="unidade" usuario={usuario} obrigatorio />
             <CampoDropdownEditavel label="Situação" name="situacao" value={form.situacao || "Ativo"} onChange={handleChange} tipo="situacao" usuario={usuario} obrigatorio />
-            
-            <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 border-t pt-4 mt-2">
-                <CampoNumSetas label="Peso do Produto (g)" name="peso_produto" value={form.peso_produto || ""} onChange={handleChange} placeholder="Ex: 3000" />
-                <CampoMedidas
-                  label="Dimensões do Produto (cm)"
-                  nomeLargura="largura_produto"
-                  nomeAltura="altura_produto"
-                  nomeComprimento="comprimento_produto"
-                  largura={form.largura_produto || ""}
-                  altura={form.altura_produto || ""}
-                  comprimento={form.comprimento_produto || ""}
-                  onChange={handleChange}
-                  placeholderLargura="Largura"
-                  placeholderAltura="Altura"
-                  placeholderComprimento="Comp."
-                />
-            </div>
-
             <CampoDropdownEditavel label="Tipo do Produto" name="tipo_produto" value={form.tipo_produto || ""} onChange={handleChange} tipo="tipo_produto" usuario={usuario} />
             <CampoDropdownEditavel label="Grupo" name="grupo" value={form.grupo || ""} onChange={handleChange} tipo="grupo" usuario={usuario} />
             <CampoDropdownEditavel label={form.subgrupo1 ? "Subgrupo 1" : "Subgrupo"} name="subgrupo1" value={form.subgrupo1 || ""} onChange={handleChange} tipo="subgrupo1" usuario={usuario} />
@@ -250,69 +232,83 @@ export default function CadastroProduto({ modo = "novo" }) {
               campoLabel="nome"
               colSpan
             />
-          </>
-        );
-      case "custo":
-        return (
-          <>
-            <CampoValorMonetario label="Custo Produto" name="custo_produto" value={form.custo_produto} onChange={handleChange} />
-            <CampoDropdownDb
-              label="Fornecedor"
-              name="id_fornecedor"
-              value={form.id_fornecedor}
+            <CampoNumSetas label="Peso do Produto (g)" name="peso_produto" value={form.peso_produto || ""} onChange={handleChange} placeholder="Ex: 3000" />
+            <CampoMedidas
+              label="Dimensões do Produto (cm)"
+              nomeLargura="largura_produto"
+              nomeAltura="altura_produto"
+              nomeComprimento="comprimento_produto"
+              largura={form.largura_produto || ""}
+              altura={form.altura_produto || ""}
+              comprimento={form.comprimento_produto || ""}
               onChange={handleChange}
-              url={`${API_URL}/cadastros_dropdown`}
-              filtro={{ tipo_cadastro: ["Fornecedor"] }}
-              campoValor="id"
-              campoLabel="nome_razao"
+              placeholderLargura="Largura"
+              placeholderAltura="Altura"
+              placeholderComprimento="Comp."
             />
           </>
         );
+      case "custo":
+  return (
+    <>
+      <CampoValorMonetario label="Custo Produto" name="custo_produto" value={form.custo_produto} onChange={handleChange} />
+      <CampoDropdownDb
+        label="Fornecedor"
+        name="id_fornecedor"
+        value={form.id_fornecedor}
+        onChange={handleChange}
+        url={`${API_URL}/cadastros_dropdown`}
+        filtro={{ tipo_cadastro: ["Fornecedor"] }}
+        campoValor="id"
+        campoLabel="nome_razao"
+      />
+    </>
+  );
       default:
-        return null;
-    }
+  return null;
+}
   };
 
-  return (
-    <div className="max-w-6xl mx-auto p-6 pb-28">
-      <h1 className="text-3xl font-bold mb-6">
-        {produtoEdicao ? `Editar Produto: ${form.descricao || ''}` : 'Novo Produto'}
-      </h1>
+return (
+  <div className="max-w-6xl mx-auto p-6 pb-28">
+    <h1 className="text-3xl font-bold mb-6">
+      {produtoEdicao ? `Editar Produto: ${form.descricao || ''}` : 'Novo Produto'}
+    </h1>
 
-      <div className="flex gap-1 border-b mb-6 overflow-x-auto whitespace-nowrap">
-        {abas.map((aba) => (
-          <button
-            key={aba.id}
-            onClick={() => setAbaAtual(aba.id)}
-            className={`px-4 py-2 font-medium rounded-t-md transition-all duration-200 ${abaAtual === aba.id ? "bg-teal-600 text-white shadow-sm" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
-          >
-            {aba.label}
-          </button>
-        ))}
-      </div>
-
-      <form id="form-principal" onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-        {renderCampos()}
-      </form>
-
-      <div className="col-span-2 flex justify-end gap-4 mt-8 mb-12">
+    <div className="flex gap-1 border-b mb-6 overflow-x-auto whitespace-nowrap">
+      {abas.map((aba) => (
         <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="px-5 py-2.5 bg-gray-300 hover:bg-gray-400 text-gray-800 rounded-md font-medium"
+          key={aba.id}
+          onClick={() => setAbaAtual(aba.id)}
+          className={`px-4 py-2 font-medium rounded-t-md transition-all duration-200 ${abaAtual === aba.id ? "bg-teal-600 text-white shadow-sm" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
         >
-          Voltar
+          {aba.label}
         </button>
-        <ButtonComPermissao
-          permissoes={["admin", "editor"]}
-          type="submit"
-          form="form-principal"
-          className="px-6 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-md font-semibold"
-        >
-          {modo === 'editar' ? 'Salvar Alterações' : 'Criar Produto'}
-        </ButtonComPermissao>
-      </div>
-      <ModalErro mensagem={erro} onClose={() => setErro("")} />
+      ))}
     </div>
-  );
+
+    <form id="form-principal" onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+      {renderCampos()}
+    </form>
+
+    <div className="col-span-2 flex justify-end gap-4 mt-8 mb-12">
+      <button
+        type="button"
+        onClick={() => navigate(-1)}
+        className="px-5 py-2.5 bg-gray-300 hover:bg-gray-400 text-gray-800 rounded-md font-medium"
+      >
+        Voltar
+      </button>
+      <ButtonComPermissao
+        permissoes={["admin", "editor"]}
+        type="submit"
+        form="form-principal"
+        className="px-6 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-md font-semibold"
+      >
+        {modo === 'editar' ? 'Salvar Alterações' : 'Criar Produto'}
+      </ButtonComPermissao>
+    </div>
+    <ModalErro mensagem={erro} onClose={() => setErro("")} />
+  </div>
+);
 }
