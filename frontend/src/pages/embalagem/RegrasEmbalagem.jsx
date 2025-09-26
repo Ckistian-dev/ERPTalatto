@@ -45,8 +45,6 @@ const criarNovaRegra = () => ({
 
 // --- OPÇÕES DE GATILHO RESTAURADAS ---
 const OPCOES_GATILHO = [
-    { valor: 'VOLUME_COMPLETO', texto: 'Volume Completo (definir quantidade)' },
-    { valor: 'SEMPRE', texto: 'Sempre Aplicar (para o que sobrar)' },
     { valor: 'MAIOR_IGUAL_A', texto: 'Qtd. a Embalar >= (Maior ou Igual a)' },
     { valor: 'IGUAL_A', texto: 'Qtd. a Embalar = (Igual a)' },
     { valor: 'MENOR_QUE', texto: 'Qtd. a Embalar < (Menor que)' },
