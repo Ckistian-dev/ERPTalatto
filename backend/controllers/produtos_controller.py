@@ -31,12 +31,11 @@ class ProdutoCreate(BaseModel):
     tipo_produto: Optional[str] = None
     grupo: Optional[str] = None
     permite_estoque_negativo: Optional[int] = None
+    id_logica_embalagem: Optional[int] = None
     peso_produto: Optional[float] = None
-    peso_embalagem: Optional[float] = None
-    unidade_caixa: Optional[int] = None
-    largura_embalagem: Optional[float] = None
-    altura_embalagem: Optional[float] = None
-    comprimento_embalagem: Optional[float] = None
+    largura_produto: Optional[float] = None
+    altura_produto: Optional[float] = None
+    comprimento_produto: Optional[float] = None
     classificacao_fiscal: Optional[str] = None
     origem: Optional[str] = None
     gtin: Optional[str] = None
@@ -46,7 +45,6 @@ class ProdutoCreate(BaseModel):
     dias_preparacao: Optional[int] = None
     id_fornecedor: Optional[int] = None
     url_imagem: Optional[str] = None
-    tipo_embalagem: Optional[str] = None
 
 
 @router.post("/produtos", status_code=status.HTTP_201_CREATED)
@@ -102,8 +100,8 @@ def listar_produtos_paginado(
             "id", "sku", "codigo_barras", "descricao", "unidade", "situacao", "peso_produto",
             "tipo_produto", "grupo", "subgrupo1", "subgrupo2", "subgrupo3", "subgrupo4", "subgrupo5",
             "classificacao_fiscal", "origem", "gtin", "gtin_tributavel",
-            "permite_estoque_negativo", "tipo_embalagem", "peso_embalagem", "unidade_caixa",
-            "largura_embalagem", "altura_embalagem", "comprimento_embalagem",
+            "permite_estoque_negativo", "id_logica_embalagem", "peso_produto",
+            "largura_produto", "altura_produto", "comprimento_produto",
             "custo_produto", "id_fornecedor", "criado_em"
         ]
         
