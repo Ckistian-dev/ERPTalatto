@@ -179,7 +179,11 @@ def criar_logica(logica: LogicaEmbalagemSchema, db: Session = Depends(get_db)):
     return db_logica
 
 @router.get("", response_model=List[LogicaEmbalagemSchema])
-def listar_logicas(db: Session = Depends(get_db)):
+def listar_todas_as_logicas(db: Session = Depends(get_db)):
+    """
+    Retorna uma lista de todas as lógicas de embalagem cadastradas.
+    Este endpoint é usado pelo dropdown no cadastro de produtos.
+    """
     return db.query(Embalagem).all()
     
 @router.put("/{logica_id}", response_model=LogicaEmbalagemSchema)

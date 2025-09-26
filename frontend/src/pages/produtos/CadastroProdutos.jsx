@@ -230,7 +230,6 @@ export default function CadastroProduto({ modo = "novo" }) {
               url={`${API_URL}/embalagem`}
               campoValor="id"
               campoLabel="nome"
-              colSpan
             />
             <CampoNumSetas label="Peso do Produto (g)" name="peso_produto" value={form.peso_produto || ""} onChange={handleChange} placeholder="Ex: 3000" />
             <CampoMedidas
