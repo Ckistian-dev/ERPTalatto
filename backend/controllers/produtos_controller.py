@@ -7,7 +7,7 @@ import decimal
 import json
 from datetime import datetime
 
-# Pool de conexão MySQL (sem alterações)
+# Pool de conexão MySQL
 pool = mysql.connector.pooling.MySQLConnectionPool(
     pool_name="produto_pool",
     pool_size=10,
@@ -19,9 +19,10 @@ pool = mysql.connector.pooling.MySQLConnectionPool(
     port=int(os.getenv("DB_PORT"))
 )
 
-router = APIRouter()
+router = APIRouter(prefix="/produtos", tags=["Produtos"])
 
-# --- Nenhuma alteração nas classes e rotas acima ---
+# --- SCHEMA Pydantic ATUALIZADO ---
+# Este schema reflete a estrutura final da tabela de produtos no banco de dados.
 class ProdutoCreate(BaseModel):
     sku: str
     descricao: str
@@ -30,6 +31,11 @@ class ProdutoCreate(BaseModel):
     situacao: str
     tipo_produto: Optional[str] = None
     grupo: Optional[str] = None
+    subgrupo1: Optional[str] = None
+    subgrupo2: Optional[str] = None
+    subgrupo3: Optional[str] = None
+    subgrupo4: Optional[str] = None
+    subgrupo5: Optional[str] = None
     permite_estoque_negativo: Optional[int] = None
     id_logica_embalagem: Optional[int] = None
     peso_produto: Optional[float] = None
@@ -47,7 +53,7 @@ class ProdutoCreate(BaseModel):
     url_imagem: Optional[str] = None
 
 
-@router.post("/produtos", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED)
 def criar_produto(produto: ProdutoCreate):
     conn = None
     cursor = None
@@ -76,7 +82,7 @@ def criar_produto(produto: ProdutoCreate):
             conn.close()
 
 
-@router.get("/produtos/paginado")
+@router.get("/paginado")
 def listar_produtos_paginado(
     page: int = 1,
     limit: int = 15,
@@ -96,8 +102,10 @@ def listar_produtos_paginado(
         where_clauses = []
         valores = []
         
+        # --- LISTA DE COLUNAS VÁLIDAS ATUALIZADA ---
+        # Removemos os campos legados de embalagem
         colunas_validas = [
-            "id", "sku", "codigo_barras", "descricao", "unidade", "situacao", "peso_produto",
+            "id", "sku", "codigo_barras", "descricao", "unidade", "situacao",
             "tipo_produto", "grupo", "subgrupo1", "subgrupo2", "subgrupo3", "subgrupo4", "subgrupo5",
             "classificacao_fiscal", "origem", "gtin", "gtin_tributavel",
             "permite_estoque_negativo", "id_logica_embalagem", "peso_produto",
@@ -151,7 +159,7 @@ def listar_produtos_paginado(
         cursor.close()
         conn.close()
 
-@router.put("/produtos/{produto_id}")
+@router.put("/{produto_id}")
 def atualizar_produto(produto_id: int, produto: dict):
     conn = pool.get_connection()
     cursor = conn.cursor()
@@ -176,7 +184,7 @@ def atualizar_produto(produto_id: int, produto: dict):
         cursor.close()
         conn.close()
 
-@router.post("/produtos/validar_importacao")
+@router.post("/validar_importacao")
 def validar_importacao_produtos(payload: dict):
     registros = payload.get("registros", [])
     conn = pool.get_connection()
@@ -205,7 +213,7 @@ def validar_importacao_produtos(payload: dict):
         cursor.close()
         conn.close()
 
-@router.post("/produtos/importar_csv_confirmado")
+@router.post("/importar_csv_confirmado")
 def importar_produtos_confirmado(payload: dict):
     registros = payload.get("registros", [])
     conn = pool.get_connection()
@@ -245,7 +253,6 @@ def importar_produtos_confirmado(payload: dict):
         cursor.close()
         conn.close()
 
-# [CORREÇÃO] A query agora retorna os campos fiscais necessários para a NF-e.
 @router.get("/produtos_dropdown")
 def listar_produtos_dropdown():
     conn = pool.get_connection()
@@ -312,7 +319,7 @@ def listar_tabela_precos(produto_id: int):
         cursor.close()
         conn.close()
 
-@router.get("/produtos/{produto_id}")
+@router.get("/{produto_id}")
 def obter_produto_por_id(produto_id: int):
     conn = pool.get_connection()
     cursor = conn.cursor(dictionary=True)

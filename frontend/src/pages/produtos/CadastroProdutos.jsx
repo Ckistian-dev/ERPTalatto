@@ -26,7 +26,7 @@ function safeParse(valor, padrao = []) {
   if (typeof valor === "object") return valor;
   try {
     const parsed = JSON.parse(valor);
-    return parsed;
+    return Array.isArray(parsed) || typeof parsed === 'object' ? parsed : padrao;
   } catch {
     return padrao;
   }
@@ -40,14 +40,36 @@ export default function CadastroProduto({ modo = "novo" }) {
   const location = useLocation();
   const produtoEdicao = location.state?.produto || null;
 
+  // --- ESTADO INICIAL ATUALIZADO ---
+  // Campos de embalagem legados foram removidos.
+  // Campos dimensionais do produto foram adicionados.
   const [form, setForm] = useState({
-    codigo_barras: '', descricao: '', sku: '', unidade: '', situacao: 'Aguardando Validação', tipo_produto: '',
-    grupo: '', subgrupo1: '', subgrupo2: '', subgrupo3: '', subgrupo4: '', subgrupo5: '',
-    permite_estoque_negativo: 0, peso_produto: '', peso_embalagem: '', unidade_caixa: '',
-    largura_embalagem: '', altura_embalagem: '', comprimento_embalagem: '',
-    classificacao_fiscal: '', origem: '', gtin: '', gtin_tributavel: '', tabela_precos: {},
-    custo_produto: '', id_fornecedor: '', url_imagem: [],
-    id_logica_embalagem: null, // Campo para o ID da lógica de embalagem
+    codigo_barras: '',
+    descricao: '',
+    sku: '',
+    unidade: '',
+    situacao: 'Ativo',
+    tipo_produto: '',
+    grupo: '',
+    subgrupo1: '',
+    subgrupo2: '',
+    subgrupo3: '',
+    subgrupo4: '',
+    subgrupo5: '',
+    permite_estoque_negativo: 0,
+    peso_produto: '',
+    largura_produto: '',
+    altura_produto: '',
+    comprimento_produto: '',
+    classificacao_fiscal: '',
+    origem: '',
+    gtin: '',
+    gtin_tributavel: '',
+    tabela_precos: {},
+    custo_produto: '',
+    id_fornecedor: '',
+    url_imagem: [],
+    id_logica_embalagem: null,
   });
 
   useEffect(() => {
@@ -65,9 +87,12 @@ export default function CadastroProduto({ modo = "novo" }) {
   }, [produtoEdicao, modo]);
 
   const abas = [
-    { id: "produto", label: "Produto" }, { id: "fiscal", label: "Fiscal" },
-    { id: "preco", label: "Preço" }, { id: "estoque", label: "Estoque" },
-    { id: "embalagem", label: "Embalagem" }, { id: "custo", label: "Custo" },
+    { id: "produto", label: "Produto" },
+    { id: "fiscal", label: "Fiscal" },
+    { id: "preco", label: "Preço" },
+    { id: "estoque", label: "Estoque" },
+    { id: "embalagem", label: "Embalagem" },
+    { id: "custo", label: "Custo" },
   ];
 
   const handleChange = (e) => {
@@ -86,26 +111,34 @@ export default function CadastroProduto({ modo = "novo" }) {
 
     const toIntOrNull = (value) => {
       if (value === '' || value === null || value === undefined) return null;
-      const num = parseInt(value, 10);
+      const num = parseInt(String(value), 10);
       return isNaN(num) ? null : num;
     };
 
+    // --- DADOS PARA ENVIO ATUALIZADOS ---
+    // Removemos os campos legados (peso_embalagem, unidade_caixa, etc.)
     const dadosParaEnvio = {
       ...form,
       id_logica_embalagem: toIntOrNull(form.id_logica_embalagem),
       sku: String(form.sku || ''),
       peso_produto: toNumberOrNull(form.peso_produto),
-      peso_embalagem: toNumberOrNull(form.peso_embalagem),
-      largura_embalagem: toNumberOrNull(form.largura_embalagem),
-      altura_embalagem: toNumberOrNull(form.altura_embalagem),
-      comprimento_embalagem: toNumberOrNull(form.comprimento_embalagem),
+      largura_produto: toNumberOrNull(form.largura_produto),
+      altura_produto: toNumberOrNull(form.altura_produto),
+      comprimento_produto: toNumberOrNull(form.comprimento_produto),
       custo_produto: toNumberOrNull(form.custo_produto),
-      unidade_caixa: toIntOrNull(form.unidade_caixa),
       id_fornecedor: toIntOrNull(form.id_fornecedor),
       permite_estoque_negativo: toIntOrNull(form.permite_estoque_negativo),
       url_imagem: JSON.stringify(form.url_imagem || []),
       tabela_precos: JSON.stringify(form.tabela_precos || {}),
     };
+
+    // Remove campos que não devem ser enviados se estiverem vazios (Ex: subgrupos)
+    Object.keys(dadosParaEnvio).forEach(key => {
+        if (dadosParaEnvio[key] === '' || dadosParaEnvio[key] === null) {
+            delete dadosParaEnvio[key];
+        }
+    });
+
 
     try {
       if (produtoEdicao) {
@@ -124,7 +157,7 @@ export default function CadastroProduto({ modo = "novo" }) {
         setErro(formattedError);
         toast.error("Por favor, corrija os erros indicados.");
       } else {
-        setErro('Ocorreu um erro desconhecido ao salvar.');
+        setErro(errorDetails || 'Ocorreu um erro desconhecido ao salvar.');
         toast.error("Erro ao salvar o produto.");
       }
     }
@@ -135,12 +168,29 @@ export default function CadastroProduto({ modo = "novo" }) {
       case "produto":
         return (
           <>
-            <CampoTextsimples label="Código (SKU)" name="sku" value={form.sku || ""} onChange={handleChange} obrigatorio placeholder="300" />
-            <CampoCodigoBarras label="Código de Barras (EAN-13)" name="codigo_barras" value={form.codigo_barras || ""} onChange={handleChange} obrigatorio />
-            <CampoTextarea label="Descrição" name="descricao" value={form.descricao || ""} onChange={handleChange} colSpan obrigatorio placeholder="PAINEL RIPADO VERSATIL" />
-            <CampoDropdownEditavel label="Unidade" name="unidade" value={form.unidade || ""} onChange={handleChange} tipo="unidade" usuario={usuario} />
+            <CampoTextsimples label="Código (SKU)" name="sku" value={form.sku || ""} onChange={handleChange} obrigatorio placeholder="Ex: PRD-001" />
+            <CampoCodigoBarras label="Código de Barras (EAN-13)" name="codigo_barras" value={form.codigo_barras || ""} onChange={handleChange} />
+            <CampoTextarea label="Descrição" name="descricao" value={form.descricao || ""} onChange={handleChange} colSpan obrigatorio placeholder="Ex: Painel Ripado de Madeira Nobre" />
+            <CampoDropdownEditavel label="Unidade" name="unidade" value={form.unidade || ""} onChange={handleChange} tipo="unidade" usuario={usuario} obrigatorio />
             <CampoDropdownEditavel label="Situação" name="situacao" value={form.situacao || "Ativo"} onChange={handleChange} tipo="situacao" usuario={usuario} obrigatorio />
-            <CampoNumSetas label="Peso Produto (g)" name="peso_produto" value={form.peso_produto || ""} onChange={handleChange} placeholder="3000" />
+            
+            <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 border-t pt-4 mt-2">
+                <CampoNumSetas label="Peso do Produto (g)" name="peso_produto" value={form.peso_produto || ""} onChange={handleChange} placeholder="Ex: 3000" />
+                <CampoMedidas
+                  label="Dimensões do Produto (cm)"
+                  nomeLargura="largura_produto"
+                  nomeAltura="altura_produto"
+                  nomeComprimento="comprimento_produto"
+                  largura={form.largura_produto || ""}
+                  altura={form.altura_produto || ""}
+                  comprimento={form.comprimento_produto || ""}
+                  onChange={handleChange}
+                  placeholderLargura="Largura"
+                  placeholderAltura="Altura"
+                  placeholderComprimento="Comp."
+                />
+            </div>
+
             <CampoDropdownEditavel label="Tipo do Produto" name="tipo_produto" value={form.tipo_produto || ""} onChange={handleChange} tipo="tipo_produto" usuario={usuario} />
             <CampoDropdownEditavel label="Grupo" name="grupo" value={form.grupo || ""} onChange={handleChange} tipo="grupo" usuario={usuario} />
             <CampoDropdownEditavel label={form.subgrupo1 ? "Subgrupo 1" : "Subgrupo"} name="subgrupo1" value={form.subgrupo1 || ""} onChange={handleChange} tipo="subgrupo1" usuario={usuario} />
@@ -190,7 +240,6 @@ export default function CadastroProduto({ modo = "novo" }) {
       case "embalagem":
         return (
           <>
-
             <CampoDropdownDb
               label="Lógica de Embalagem (Para cálculo de volumes)"
               name="id_logica_embalagem"
@@ -199,25 +248,7 @@ export default function CadastroProduto({ modo = "novo" }) {
               url={`${API_URL}/embalagem`}
               campoValor="id"
               campoLabel="nome"
-            />
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-              <CampoNumSetas label="Unidades por Embalagem" name="unidade_caixa" value={form.unidade_caixa || ""} onChange={handleChange} />
-              <CampoNumSetas label="Peso da Embalagem (g)" name="peso_embalagem" value={form.peso_embalagem || ""} onChange={handleChange} placeholder="Ex: 3150" />
-            </div>
-
-            <CampoMedidas
-              label="Dimensões da Embalagem (cm)"
-              nomeLargura="largura_embalagem"
-              nomeAltura="altura_embalagem"
-              nomeComprimento="comprimento_embalagem"
-              largura={form.largura_embalagem || ""}
-              altura={form.altura_embalagem || ""}
-              comprimento={form.comprimento_embalagem || ""}
-              onChange={handleChange}
-              placeholderLargura="Largura"
-              placeholderAltura="Altura"
-              placeholderComprimento="Comp."
+              colSpan
             />
           </>
         );
