@@ -47,10 +47,6 @@ const criarNovaRegra = () => ({
 const OPCOES_GATILHO = [
     { valor: 'VOLUME_COMPLETO', texto: 'Volume Completo (definir quantidade)' },
     { valor: 'SEMPRE', texto: 'Sempre Aplicar (para o que sobrar)' },
-    { valor: 'MAIOR_IGUAL_A', texto: 'Qtd. a Embalar MAIOR OU IGUAL A' },
-    { valor: 'IGUAL_A', texto: 'Qtd. a Embalar IGUAL A' },
-    { valor: 'MENOR_QUE', texto: 'Qtd. a Embalar MENOR QUE' },
-    { valor: 'ENTRE', texto: 'Qtd. a Embalar ESTÁ ENTRE (ex: 5,13)' },
 ];
 
 export default function CadastroLogicaEmbalagem({ modo = 'novo' }) {
