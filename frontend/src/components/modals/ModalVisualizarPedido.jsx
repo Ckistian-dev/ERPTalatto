@@ -60,7 +60,6 @@ const pedidoVazio = {
 // =================================================================================
 const faixasDescontoDefinidas = [120, 60, 50, 48, 40, 36, 30, 25, 24, 20, 18, 12, 10, 8, 7, 6, 5, 4, 3, 2];
 
-// [CORREÇÃO 1 de 3] - Função getPriceConfig agora aceita e utiliza o 'produtoId'
 const getPriceConfig = (tabelaPrecoId, produtoId, precosDisponiveis) => {
     if (!precosDisponiveis || !tabelaPrecoId || !produtoId) return null;
     const searchTerm = String(tabelaPrecoId).trim().toLowerCase();
@@ -68,7 +67,6 @@ const getPriceConfig = (tabelaPrecoId, produtoId, precosDisponiveis) => {
     const precoEncontrado = precosDisponiveis.find(p => {
         const idMatches = (p.id ? String(p.id).trim().toLowerCase() : '') === searchTerm;
         const nameMatches = (p.nome ? String(p.nome).trim().toLowerCase() : '') === searchTerm;
-        // Garante que a tabela de preço pertence ao produto correto
         return p.produto_id === produtoId && (idMatches || nameMatches);
     });
 
@@ -85,9 +83,7 @@ const getDescontoAplicado = (quantidade, descontos) => {
     return 0;
 };
 
-// [CORREÇÃO 2 de 3] - Função calcularValoresItem agora passa o 'produto_id' para getPriceConfig
 const calcularValoresItem = (item, precosDisponiveis) => {
-    // Passa o ID do produto do item para a busca da configuração de preço
     const priceConfig = getPriceConfig(item.tabela_preco_id, item.produto_id, precosDisponiveis);
     const quantidade = Number(item.quantidade_itens) || 1;
 
@@ -103,7 +99,7 @@ const calcularValoresItem = (item, precosDisponiveis) => {
 
 
 // =================================================================================
-// COMPONENTES DE VISUALIZAÇÃO (sem alterações)
+// COMPONENTES DE VISUALIZAÇÃO
 // =================================================================================
 function formatarValor(valor) {
     const numero = Number(valor);
@@ -156,6 +152,12 @@ function DetalhesGerais({ pedido }) {
                     <span className="text-gray-500">Prazo Entrega:</span>
                     <p className="font-semibold text-gray-800">{pedido.prazo_entrega_dias ? `${pedido.prazo_entrega_dias} dias úteis` : "Não informado"}</p>
                 </div>
+                {pedido.transportadora_nome && (
+                    <div>
+                        <span className="text-gray-500">Transportadora:</span>
+                        <p className="font-semibold text-gray-800">{pedido.transportadora_nome}</p>
+                    </div>
+                )}
             </div>
         </section>
     );
@@ -272,10 +274,10 @@ function InformacoesAdicionais({ observacao }) {
     );
 }
 
-// --- COMPONENTE PRINCIPAL ATUALIZADO ---
+// --- COMPONENTE PRINCIPAL ---
 export default function ModalVisualizarPedido({ pedido = pedidoVazio, onClose }) {
     
-    const [view, setView] = useState('selecionar_empresa'); // 'selecionar_empresa' ou 'visualizar_orcamento'
+    const [view, setView] = useState('selecionar_empresa');
     const [empresaSelecionada, setEmpresaSelecionada] = useState(null);
     const [empresaIdTemporaria, setEmpresaIdTemporaria] = useState('industria');
 
@@ -289,7 +291,6 @@ export default function ModalVisualizarPedido({ pedido = pedidoVazio, onClose })
         } catch (e) { return []; }
     }, [pedido.lista_itens]);
 
-    // [CORREÇÃO 3 de 3] - Lógica de busca de dados foi ajustada para enriquecer os preços com 'produto_id'
     useEffect(() => {
         if (view === 'visualizar_orcamento') {
             const carregarDadosEssenciais = async () => {
@@ -300,23 +301,23 @@ export default function ModalVisualizarPedido({ pedido = pedidoVazio, onClose })
                 
                 setLoading(true);
                 try {
-                    // Busca produtos (sem alteração)
-                    const produtosRes = await axios.get(`${API_URL}/produtos_dropdown`);
+                    // ======================= ALTERAÇÃO APLICADA AQUI =======================
+                    // A rota no backend é prefixada com "/produtos"
+                    const produtosRes = await axios.get(`${API_URL}/produtos/produtos_dropdown`);
+                    // =========================================================================
                     setProdutosDisponiveis(produtosRes.data);
 
-                    // Busca os preços para cada item individualmente
                     const pricePromises = itensOriginais.map(item =>
-                        axios.get(`${API_URL}/tabela_precos_por_produto?produto_id=${item.produto_id}`)
+                        axios.get(`${API_URL}/produtos/tabela_precos_por_produto?produto_id=${item.produto_id}`)
                     );
                     const priceResponses = await Promise.all(pricePromises);
 
-                    // Mapeia as respostas, adicionando o ID do produto a cada tabela de preço
                     const allPriceConfigs = priceResponses.flatMap((res, index) => {
-                        const productId = itensOriginais[index].produto_id; // Pega o ID do produto correspondente
+                        const productId = itensOriginais[index].produto_id;
                         const pricesForProduct = res.data || [];
                         return pricesForProduct.map(priceInfo => ({
                             ...priceInfo,
-                            produto_id: productId // Adiciona o ID do produto para evitar colisões
+                            produto_id: productId
                         }));
                     });
 
@@ -324,6 +325,7 @@ export default function ModalVisualizarPedido({ pedido = pedidoVazio, onClose })
 
                 } catch (error) {
                     toast.error("Erro ao carregar dados para visualização.");
+                    console.error("Erro ao buscar dados:", error);
                 } finally {
                     setLoading(false);
                 }
@@ -395,7 +397,7 @@ export default function ModalVisualizarPedido({ pedido = pedidoVazio, onClose })
                     </select>
 
                     <div className="flex justify-center gap-4">
-                        <button onClick={onClose} className="text-gray-600 hover:text-gray-900 font-medium py-2 px-6 rounded-lg">Cancelar</button>
+                        <button onClick={onClose} className="constext-gray-600 hover:text-gray-900 font-medium py-2 px-6 rounded-lg">Cancelar</button>
                         <button onClick={handleContinuar} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-6 rounded-lg">Continuar</button>
                     </div>
                 </div>
@@ -426,7 +428,7 @@ export default function ModalVisualizarPedido({ pedido = pedidoVazio, onClose })
                     )}
                 </div>
                 <div className="flex-shrink-0 p-3 bg-gray-50 border-t rounded-b-lg flex justify-between items-center no-print">
-                       <button onClick={onClose} className="text-gray-600 hover:text-gray-900 text-sm font-medium py-1.5 px-3 rounded-md">Fechar</button>
+                      <button onClick={onClose} className="text-gray-600 hover:text-gray-900 text-sm font-medium py-1.5 px-3 rounded-md">Fechar</button>
                     <button onClick={gerarPDF} disabled={loading} className="bg-red-700 hover:bg-red-800 text-white font-bold py-1.5 px-3 rounded-md flex items-center gap-2 transition-colors duration-200 text-sm disabled:opacity-50 disabled:cursor-not-allowed"><FaFilePdf /> Baixar PDF</button>
                 </div>
             </div>
