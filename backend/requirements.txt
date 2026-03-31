@@ -1,0 +1,26 @@
+fastapi
+uvicorn[standard]
+SQLAlchemy
+psycopg2-binary
+python-dotenv
+pydantic-settings
+email-validator
+python-jose[cryptography]
+python-multipart
+passlib
+bcrypt==4.3.0
+
+httpx
+authlib
+requests-oauthlib
+
+# nota fiscal
+pynfe
+lxml
+cryptography
+signxml
+pyOpenSSL
+requests
+urllib3
+pytz
+reportlab
